@@ -2,6 +2,8 @@
 
 A minimal macOS menu bar app for voice-to-text using the [Parakeet](https://github.com/FluidInference/FluidAudio) model. Press a hotkey, speak, and the transcription is automatically pasted into the active app.
 
+<img src=".github/screenshot.png" alt="MiniWhisper screenshot" width="320">
+
 ## Install
 
 ### Homebrew
