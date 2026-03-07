@@ -24,8 +24,7 @@ cask "miniwhisper" do
   version "${MARKETING_VERSION}"
   sha256 "${SHA}"
 
-  url "https://github.com/andyhtran/MiniWhisper/releases/download/v#{version}/MiniWhisper-#{version}.zip",
-      verified: "github.com/andyhtran/MiniWhisper/"
+  url "https://github.com/andyhtran/MiniWhisper/releases/download/v#{version}/MiniWhisper-#{version}.zip"
   name "MiniWhisper"
   desc "Voice-to-text transcription from the menu bar"
   homepage "https://github.com/andyhtran/MiniWhisper"
