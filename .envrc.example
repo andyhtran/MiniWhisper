@@ -1,0 +1,9 @@
+# Copy to .envrc and fill in your values
+# If using direnv, run: direnv allow
+
+# Code signing (for local dev builds via `just run`)
+export CODESIGN_IDENTITY="-"  # ad-hoc signing, or "Developer ID Application: Your Name (TEAMID)"
+export CODESIGN_TEAM_ID=""    # your Apple team ID, leave empty for ad-hoc
+
+# Release only (for `just publish`)
+export TAP_DIR=""  # path to your local homebrew-tap checkout
