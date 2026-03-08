@@ -13,9 +13,9 @@ A minimal macOS menu bar app for voice-to-text using the [Parakeet](https://gith
 
 ## Install
 
-### Download
+### Download (Recommended)
 
-[**Download MiniWhisper.dmg**](https://github.com/andyhtran/MiniWhisper/releases/latest/download/MiniWhisper.dmg) — open it and drag MiniWhisper to your Applications folder.
+[**Download**](https://github.com/andyhtran/MiniWhisper/releases/latest/download/MiniWhisper.dmg) · Open `MiniWhisper.dmg` and drag the app to your Applications folder.
 
 ### Homebrew
 
