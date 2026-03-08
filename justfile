@@ -52,16 +52,22 @@ clean:
 sign-and-notarize:
     bash Scripts/sign-and-notarize.sh
 
-# Create GitHub release and upload zip
+# Create DMG installer from signed app
 [group('release')]
-github-release: sign-and-notarize
+create-dmg: sign-and-notarize
+    bash Scripts/create-dmg.sh
+
+# Create GitHub release and upload zip + dmg
+[group('release')]
+github-release: sign-and-notarize create-dmg
     #!/usr/bin/env bash
     source version.env
     TAG="v${MARKETING_VERSION}"
     ZIP="MiniWhisper-${MARKETING_VERSION}.zip"
+    DMG="MiniWhisper.dmg"
     git tag -f "$TAG"
     git push -f origin "$TAG"
-    gh release create "$TAG" "$ZIP" \
+    gh release create "$TAG" "$ZIP" "$DMG" \
         --title "MiniWhisper ${MARKETING_VERSION}" \
         --generate-notes
 
