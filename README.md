@@ -7,15 +7,23 @@ A minimal macOS menu bar app for voice-to-text using the [Parakeet](https://gith
 ![License MIT](https://img.shields.io/github/license/andyhtran/MiniWhisper)
 ![GitHub release](https://img.shields.io/github/v/release/andyhtran/MiniWhisper)
 
-[Install](#install) · [Usage](#usage) · [Features](#features) · [Build](#build-commands)
+[Getting Started](#getting-started) · [Features](#features) · [Build](#build-commands)
 
 <img src=".github/screenshot.png" alt="MiniWhisper screenshot" width="320">
 
-## Install
+## Getting Started
 
-### Download (Recommended)
+1. [**Download MiniWhisper**](https://github.com/andyhtran/MiniWhisper/releases/latest/download/MiniWhisper.dmg)
+2. Open the DMG and drag the app to your Applications folder
+3. Launch MiniWhisper from Applications (or search "MiniWhisper" in Spotlight)
+4. Grant microphone and accessibility permissions when prompted
+5. Look for the MiniWhisper icon in your menu bar (top-right of your screen)
+6. Press **Option + `** to start recording, press it again to stop — the transcription is pasted into the frontmost app
 
-[**Download**](https://github.com/andyhtran/MiniWhisper/releases/latest/download/MiniWhisper.dmg) · Open `MiniWhisper.dmg` and drag the app to your Applications folder.
+Press **Escape** to cancel a recording. To change the hotkey, click the MiniWhisper icon in the menu bar and set a new shortcut (e.g. **Fn**).
+
+<details>
+<summary>Other install methods</summary>
 
 ### Homebrew
 
@@ -34,15 +42,7 @@ cd MiniWhisper
 just dev
 ```
 
-## Usage
-
-1. Launch MiniWhisper — it lives in your menu bar
-2. Grant microphone and accessibility permissions when prompted
-3. Press **Option + `** to start recording (customizable in the menu bar panel)
-4. Press the hotkey again to stop — the transcription is pasted into the frontmost app
-5. Press **Escape** to cancel a recording
-
-Your clipboard is preserved: MiniWhisper temporarily uses it to paste, then restores the previous contents.
+</details>
 
 ## Features
 
