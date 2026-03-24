@@ -9,6 +9,11 @@ final class ParakeetProvider {
 
     var isInitialized: Bool { asrManager != nil }
 
+    func unload() {
+        asrManager = nil
+        initializationTask = nil
+    }
+
     func initialize() async throws {
         if asrManager != nil { return }
 

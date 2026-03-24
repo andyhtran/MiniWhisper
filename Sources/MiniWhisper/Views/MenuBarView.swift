@@ -65,6 +65,16 @@ private struct RecordingHeaderView: View {
                 Text(formatDuration(appState.recorder.currentDuration))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.secondary)
+            } else if appState.isModelDownloading {
+                HStack(spacing: 6) {
+                    ProgressView(value: appState.modelDownloadProgress)
+                        .progressViewStyle(.linear)
+                        .frame(width: 80)
+                        .controlSize(.small)
+                    Text("\(Int(appState.modelDownloadProgress * 100))%")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
             } else if !appState.isModelLoaded {
                 ProgressView()
                     .controlSize(.small)
@@ -102,6 +112,7 @@ private struct RecordingHeaderView: View {
         }
         switch appState.recorder.state {
         case .idle:
+            if appState.isModelDownloading { return "Downloading Model..." }
             return appState.isModelLoaded ? "Ready" : "Loading Model..."
         case .recording: return "Recording"
         case .processing: return "Transcribing..."
@@ -352,10 +363,25 @@ private struct FooterBarView: View {
     @Environment(AppState.self) private var appState
     @State private var showHistory = false
     @State private var showReplacements = false
+    @State private var showModelPicker = false
 
     var body: some View {
         HStack(spacing: 16) {
             Spacer()
+
+            Button {
+                showModelPicker.toggle()
+            } label: {
+                Image(systemName: appState.transcriptionMode == .multilingual ? "globe" : "waveform")
+                    .font(.system(size: 14))
+                    .foregroundColor(appState.transcriptionMode == .multilingual ? .accentColor : .secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .help("Transcription Model")
+            .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
+                ModelPickerView()
+            }
 
             Button {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
