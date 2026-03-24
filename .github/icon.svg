@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg5" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1012"/>
+      <stop offset="100%" stop-color="#0d0a0b"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg5)"/>
+
+  <!-- Particle dots forming microphone shape (~1.4x scale from original 5) -->
+  <!-- Head of mic (oval cluster) -->
+  <circle cx="234" cy="122" r="8" fill="#E8735A" opacity="0.9"/>
+  <circle cx="256" cy="105" r="10" fill="#F28B6E" opacity="1"/>
+  <circle cx="278" cy="119" r="7" fill="#D4533B" opacity="0.85"/>
+  <circle cx="245" cy="143" r="11" fill="#E8735A" opacity="0.95"/>
+  <circle cx="273" cy="139" r="8" fill="#F28B6E" opacity="0.9"/>
+  <circle cx="256" cy="129" r="13" fill="#E8735A" opacity="1"/>
+  <circle cx="228" cy="161" r="10" fill="#D4533B" opacity="0.88"/>
+  <circle cx="256" cy="167" r="11" fill="#E8735A" opacity="0.95"/>
+  <circle cx="284" cy="158" r="8" fill="#F28B6E" opacity="0.9"/>
+  <circle cx="239" cy="185" r="10" fill="#E8735A" opacity="0.92"/>
+  <circle cx="267" cy="181" r="11" fill="#D4533B" opacity="0.9"/>
+  <circle cx="250" cy="203" r="8" fill="#F28B6E" opacity="0.85"/>
+  <circle cx="276" cy="206" r="7" fill="#E8735A" opacity="0.8"/>
+  <circle cx="234" cy="220" r="10" fill="#E8735A" opacity="0.88"/>
+  <circle cx="262" cy="227" r="8" fill="#D4533B" opacity="0.82"/>
+  <circle cx="284" cy="222" r="7" fill="#F28B6E" opacity="0.78"/>
+  <circle cx="245" cy="245" r="11" fill="#E8735A" opacity="0.85"/>
+  <circle cx="273" cy="248" r="8" fill="#D4533B" opacity="0.8"/>
+
+  <!-- Holder arc dots -->
+  <circle cx="203" cy="262" r="7" fill="#E8735A" opacity="0.7"/>
+  <circle cx="195" cy="283" r="7" fill="#E8735A" opacity="0.65"/>
+  <circle cx="192" cy="304" r="6" fill="#D4533B" opacity="0.6"/>
+  <circle cx="200" cy="325" r="7" fill="#E8735A" opacity="0.55"/>
+  <circle cx="217" cy="343" r="6" fill="#F28B6E" opacity="0.5"/>
+  <circle cx="239" cy="354" r="7" fill="#E8735A" opacity="0.5"/>
+  <circle cx="304" cy="262" r="7" fill="#E8735A" opacity="0.7"/>
+  <circle cx="312" cy="283" r="7" fill="#E8735A" opacity="0.65"/>
+  <circle cx="315" cy="304" r="6" fill="#D4533B" opacity="0.6"/>
+  <circle cx="306" cy="325" r="7" fill="#E8735A" opacity="0.55"/>
+  <circle cx="290" cy="343" r="6" fill="#F28B6E" opacity="0.5"/>
+  <circle cx="267" cy="354" r="7" fill="#E8735A" opacity="0.5"/>
+
+  <!-- Stand dots -->
+  <circle cx="256" cy="371" r="7" fill="#E8735A" opacity="0.45"/>
+  <circle cx="256" cy="390" r="6" fill="#D4533B" opacity="0.4"/>
+  <circle cx="256" cy="409" r="7" fill="#E8735A" opacity="0.35"/>
+
+  <!-- Base dots -->
+  <circle cx="228" cy="427" r="6" fill="#E8735A" opacity="0.3"/>
+  <circle cx="245" cy="430" r="7" fill="#D4533B" opacity="0.3"/>
+  <circle cx="267" cy="430" r="7" fill="#F28B6E" opacity="0.3"/>
+  <circle cx="284" cy="427" r="6" fill="#E8735A" opacity="0.3"/>
+
+  <!-- Scattered dissolving particles -->
+  <circle cx="304" cy="108" r="4" fill="#E8735A" opacity="0.3"/>
+  <circle cx="325" cy="129" r="3" fill="#F28B6E" opacity="0.2"/>
+  <circle cx="206" cy="101" r="3.5" fill="#D4533B" opacity="0.25"/>
+  <circle cx="332" cy="178" r="3" fill="#E8735A" opacity="0.15"/>
+  <circle cx="178" cy="150" r="4" fill="#E8735A" opacity="0.2"/>
+  <circle cx="346" cy="234" r="3" fill="#F28B6E" opacity="0.12"/>
+  <circle cx="164" cy="248" r="3.5" fill="#D4533B" opacity="0.15"/>
+  <circle cx="208" cy="430" r="3" fill="#E8735A" opacity="0.15"/>
+  <circle cx="304" cy="437" r="3" fill="#E8735A" opacity="0.12"/>
+</svg>
