@@ -8,6 +8,7 @@ import UserNotifications
 final class AppState: Sendable {
     let recorder = AudioRecorder()
     let parakeet = ParakeetProvider()
+    let whisper = WhisperProvider()
     let recordingStore = RecordingStore()
     let analyticsStore = AnalyticsStore()
     let permissions = PermissionsManager()
@@ -15,6 +16,7 @@ final class AppState: Sendable {
     let toast = ToastWindowController.shared
 
     var replacementSettings = ReplacementSettings.load()
+    var transcriptionMode: TranscriptionMode = TranscriptionModeStorage.load()
 
     let maxRecordingDuration: TimeInterval = 600.0  // 10 minutes
     var warningDuration: TimeInterval { maxRecordingDuration * 0.8 }  // 8 minutes
@@ -23,18 +25,65 @@ final class AppState: Sendable {
     private var durationCheckTimer: Timer?
     private var currentRecordingId: String?
 
-    // Callbacks for HotkeyManager to track recording state
     var onRecordingStarted: (() -> Void)?
     var onRecordingEnded: (() -> Void)?
 
-    var isModelLoaded: Bool { parakeet.isInitialized }
+    var isModelLoaded: Bool {
+        switch transcriptionMode {
+        case .english: return parakeet.isInitialized
+        case .multilingual: return whisper.isInitialized
+        }
+    }
+
+    var isModelDownloading: Bool { whisper.isDownloading }
+    var modelDownloadProgress: Double { whisper.downloadProgress }
 
     // MARK: - Initialization
 
     func preloadModel() {
         Task {
             do {
-                try await parakeet.initialize()
+                switch transcriptionMode {
+                case .english:
+                    try await parakeet.initialize()
+                case .multilingual:
+                    guard whisper.modelExists else { return }
+                    try await whisper.initialize()
+                }
+            } catch {
+                toast.showError(title: "Model Load Failed", message: error.localizedDescription)
+            }
+        }
+    }
+
+    func switchTranscriptionMode(to mode: TranscriptionMode) {
+        guard mode != transcriptionMode else { return }
+
+        if recorder.state.isRecording {
+            toast.showError(title: "Cannot Switch", message: "Stop recording before switching models.")
+            return
+        }
+
+        if recorder.state == .processing {
+            return
+        }
+
+        switch transcriptionMode {
+        case .english: parakeet.unload()
+        case .multilingual: whisper.unload()
+        }
+
+        transcriptionMode = mode
+        TranscriptionModeStorage.save(mode)
+
+        Task {
+            do {
+                switch mode {
+                case .english:
+                    try await parakeet.initialize()
+                case .multilingual:
+                    try await whisper.initialize()
+                }
             } catch {
                 toast.showError(title: "Model Load Failed", message: error.localizedDescription)
             }
@@ -53,7 +102,7 @@ final class AppState: Sendable {
 
     func startRecording() {
         guard recorder.state.isIdle else { return }
-        guard parakeet.isInitialized else {
+        guard isModelLoaded else {
             toast.showError(title: "Model Not Ready", message: "Please wait for the model to finish loading.")
             return
         }
@@ -113,7 +162,13 @@ final class AppState: Sendable {
 
     private func transcribe(audioURL: URL, recordingId: String, duration: TimeInterval, sampleRate: Double) async {
         do {
-            let result = try await parakeet.transcribe(audioURL: audioURL)
+            let result: TranscriptionResult
+            switch transcriptionMode {
+            case .english:
+                result = try await parakeet.transcribe(audioURL: audioURL)
+            case .multilingual:
+                result = try await whisper.transcribe(audioURL: audioURL)
+            }
 
             // Guard against stale callback: if the user rapid-tapped and started a new
             // recording while transcription was in-flight, the state has moved on.
@@ -156,8 +211,8 @@ final class AppState: Sendable {
                     transcriptionDuration: result.duration
                 ),
                 configuration: RecordingConfiguration(
-                    voiceModel: "Parakeet",
-                    language: "en"
+                    voiceModel: result.model,
+                    language: result.language
                 )
             )
 
@@ -186,7 +241,7 @@ final class AppState: Sendable {
                 ),
                 transcription: nil,
                 configuration: RecordingConfiguration(
-                    voiceModel: "Parakeet",
+                    voiceModel: transcriptionMode == .english ? "Parakeet" : "Whisper",
                     language: "en"
                 )
             )

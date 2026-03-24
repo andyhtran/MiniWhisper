@@ -54,10 +54,10 @@ struct CustomShortcut: Codable, Equatable, Hashable {
 
     var compactDisplayString: String {
         var str = ""
-        if control { str += "⌃" }
-        if option { str += "⌥" }
-        if shift { str += "⇧" }
-        if command { str += "⌘" }
+        if control { str += "Ctrl+" }
+        if option { str += "Option+" }
+        if shift { str += "Shift+" }
+        if command { str += "Cmd+" }
         if fn { str += "Fn+" }
         str += keyCodeDisplayName
         return str
@@ -215,7 +215,7 @@ final class CustomShortcutStorage {
 
     static func defaultShortcuts() -> [CustomShortcutName: CustomShortcut] {
         [
-            .toggleRecording: CustomShortcut(keyCode: UInt16(kVK_ANSI_Grave), option: true),  // Option + `
+            .toggleRecording: CustomShortcut(keyCode: UInt16(kVK_ANSI_R), option: true, shift: true),
             .cancelRecording: CustomShortcut(keyCode: UInt16(kVK_Escape)),  // Escape
         ]
     }
