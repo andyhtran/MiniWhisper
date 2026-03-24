@@ -1,6 +1,6 @@
 # MiniWhisper
 
-A minimal macOS menu bar app for voice-to-text using the [Parakeet](https://github.com/FluidInference/FluidAudio) model. Press a hotkey, speak, and the transcription is automatically pasted into the active app.
+A minimal macOS menu bar app for voice-to-text with fast English transcription via [Parakeet](https://github.com/FluidInference/FluidAudio) and multilingual transcription via [whisper.cpp](https://github.com/ggml-org/whisper.cpp). Press a hotkey, speak, and the transcription is automatically pasted into the active app.
 
 ![macOS 14.0+](https://img.shields.io/badge/macOS-14.0%2B-blue)
 ![Swift 6.0+](https://img.shields.io/badge/Swift-6.0%2B-orange)
@@ -51,7 +51,8 @@ just dev
 - **Text replacements** — auto-correct words or phrases after transcription
 - **Recording history** — browse and copy recent transcriptions
 - **Usage stats** — track recordings, speaking time, word count, and average WPM
-- **On-device** — all processing happens locally via the Parakeet model, nothing leaves your Mac
+- **Multiple models** — switch between fast English-only (Parakeet) and multilingual auto-detect (whisper.cpp)
+- **On-device** — all processing happens locally on your Mac, nothing leaves your device
 
 ## Build commands
 
