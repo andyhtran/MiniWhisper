@@ -37,7 +37,7 @@ struct CustomShortcutMatchTests {
 struct CustomShortcutDisplayTests {
     @Test func optionGraveDisplayString() {
         let shortcut = CustomShortcut(keyCode: UInt16(kVK_ANSI_Grave), option: true)
-        #expect(shortcut.compactDisplayString == "⌥`")
+        #expect(shortcut.compactDisplayString == "Option+`")
     }
 
     @Test func allModifiersDisplayInOrder() {
@@ -45,7 +45,7 @@ struct CustomShortcutDisplayTests {
             keyCode: UInt16(kVK_ANSI_K),
             command: true, option: true, control: true, shift: true
         )
-        #expect(shortcut.compactDisplayString == "⌃⌥⇧⌘K")
+        #expect(shortcut.compactDisplayString == "Ctrl+Option+Shift+Cmd+K")
     }
 
     @Test func fnPrefixDisplayString() {

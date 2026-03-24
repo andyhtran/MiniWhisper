@@ -12,6 +12,11 @@ SIGNING_ID="${CODESIGN_IDENTITY:?Set CODESIGN_IDENTITY to your Developer ID Appl
 echo "==> Building release..."
 bash "$ROOT/Scripts/build-app.sh" release
 
+echo "==> Signing embedded frameworks..."
+for fw in "$APP_BUNDLE"/Contents/Frameworks/*.framework; do
+    [ -d "$fw" ] && codesign --force --timestamp --options runtime --sign "$SIGNING_ID" "$fw"
+done
+
 echo "==> Signing with: $SIGNING_ID"
 codesign --force --timestamp --options runtime \
     --sign "$SIGNING_ID" \

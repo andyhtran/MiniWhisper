@@ -30,6 +30,22 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 
+# Embed whisper.framework with proper macOS versioned structure
+FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
+if [ -d "$BUILD_DIR/whisper.framework" ]; then
+    mkdir -p "$FRAMEWORKS_DIR/whisper.framework/Versions/A"
+    cp -R "$BUILD_DIR/whisper.framework/Versions/A/Headers" "$FRAMEWORKS_DIR/whisper.framework/Versions/A/"
+    cp -R "$BUILD_DIR/whisper.framework/Versions/A/Modules" "$FRAMEWORKS_DIR/whisper.framework/Versions/A/"
+    cp -R "$BUILD_DIR/whisper.framework/Versions/A/Resources" "$FRAMEWORKS_DIR/whisper.framework/Versions/A/"
+    cp "$BUILD_DIR/whisper.framework/Versions/A/whisper" "$FRAMEWORKS_DIR/whisper.framework/Versions/A/"
+    ln -sf A "$FRAMEWORKS_DIR/whisper.framework/Versions/Current"
+    ln -sf Versions/Current/Headers "$FRAMEWORKS_DIR/whisper.framework/Headers"
+    ln -sf Versions/Current/Modules "$FRAMEWORKS_DIR/whisper.framework/Modules"
+    ln -sf Versions/Current/Resources "$FRAMEWORKS_DIR/whisper.framework/Resources"
+    ln -sf Versions/Current/whisper "$FRAMEWORKS_DIR/whisper.framework/whisper"
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+fi
+
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
