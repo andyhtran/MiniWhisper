@@ -1,6 +1,7 @@
 app_name := "MiniWhisper"
 bundle_id := "com.miniwhisper.dev"
 signing_id := env("CODESIGN_IDENTITY", "-")
+dev_signing_id := env("DEV_CODESIGN_IDENTITY", "-")
 team_id := env("CODESIGN_TEAM_ID", "")
 install_path := "/Applications/MiniWhisper Dev.app"
 
@@ -14,16 +15,13 @@ dev: kill build package
     set -euo pipefail
     rm -rf "{{install_path}}"
     cp -R build/{{app_name}}.app "{{install_path}}"
-    if [[ -n "{{team_id}}" ]]; then
-    codesign --force --sign "{{signing_id}}" \
-        --entitlements build/MiniWhisper.entitlements \
-        -r='designated => anchor apple generic and identifier "{{bundle_id}}" and certificate leaf[subject.OU] = "{{team_id}}"' \
-        "{{install_path}}"
-    else
-    codesign --force --sign "{{signing_id}}" \
+    # Sign embedded frameworks
+    for fw in "{{install_path}}"/Contents/Frameworks/*.framework; do
+        [ -d "$fw" ] && codesign --force --sign "{{dev_signing_id}}" "$fw"
+    done
+    codesign --force --sign "{{dev_signing_id}}" \
         --entitlements build/MiniWhisper.entitlements \
         "{{install_path}}"
-    fi
     rm -rf build/{{app_name}}.app
     open "{{install_path}}"
 
