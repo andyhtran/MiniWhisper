@@ -21,7 +21,7 @@ fi
 
 echo "Building $APP_NAME ($BUILD_CONFIG)..."
 
-swift build -c "$BUILD_CONFIG"
+swift build -c "$BUILD_CONFIG" --product "$APP_NAME"
 
 echo "Creating app bundle..."
 rm -rf "$APP_BUNDLE"

@@ -364,6 +364,7 @@ private struct FooterBarView: View {
     @State private var showHistory = false
     @State private var showReplacements = false
     @State private var showModelPicker = false
+    @State private var showLaunchAtLogin = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -423,9 +424,23 @@ private struct FooterBarView: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .help("Recent Transcriptions")
+            .help("Recent History")
             .popover(isPresented: $showHistory, arrowEdge: .bottom) {
                 HistoryPopoverView()
+            }
+
+            Button {
+                showLaunchAtLogin.toggle()
+            } label: {
+                Image(systemName: appState.launchAtLoginEnabled ? "power.circle.fill" : "power.circle")
+                    .font(.system(size: 14))
+                    .foregroundColor(appState.launchAtLoginEnabled ? .accentColor : .secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .help("Start on Login")
+            .popover(isPresented: $showLaunchAtLogin, arrowEdge: .bottom) {
+                LaunchAtLoginPopoverView()
             }
 
             Button {
@@ -444,6 +459,39 @@ private struct FooterBarView: View {
     }
 }
 
+private struct LaunchAtLoginPopoverView: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Launch at Login")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            if appState.launchAtLoginSupported {
+                Toggle(
+                    "Start MiniWhisper when you log in",
+                    isOn: Binding(
+                        get: { appState.launchAtLoginEnabled },
+                        set: { appState.setLaunchAtLogin($0) }
+                    )
+                )
+                .toggleStyle(.switch)
+                .font(.system(size: 13))
+            } else {
+                Text("Unavailable in this runtime. Build/run the bundled app to enable login item registration.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(width: 280)
+    }
+}
+
 // MARK: - History Popover
 
 private struct HistoryPopoverView: View {
@@ -458,8 +506,8 @@ private struct HistoryPopoverView: View {
                 .tracking(0.5)
                 .padding(.horizontal, 10)
 
-            if appState.recordingStore.recentRecordings.isEmpty {
-                Text("No recordings yet")
+            if appState.recordingStore.recentHistoryItems.isEmpty {
+                Text("No recent transcripts")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary.opacity(0.7))
                     .italic()
@@ -467,8 +515,8 @@ private struct HistoryPopoverView: View {
                     .padding(.horizontal, 10)
             } else {
                 VStack(spacing: 2) {
-                    ForEach(appState.recordingStore.recentRecordings) { recording in
-                        HistoryPopoverRow(recording: recording, pasteboard: appState.pasteboard)
+                    ForEach(appState.recordingStore.recentHistoryItems) { recording in
+                        HistoryPopoverRow(recording: recording)
                     }
                 }
             }
@@ -479,35 +527,53 @@ private struct HistoryPopoverView: View {
 }
 
 private struct HistoryPopoverRow: View {
+    @Environment(AppState.self) private var appState
     let recording: Recording
-    let pasteboard: PasteboardService
     @State private var copied = false
     @State private var isHovering = false
 
     var body: some View {
-        Button {
+        Group {
             if let text = recording.transcription?.text {
-                pasteboard.copy(text)
-                copied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    copied = false
+                Button {
+                    appState.pasteboard.copy(text)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        copied = false
+                    }
+                } label: {
+                    rowContent
                 }
+                .buttonStyle(.plain)
+            } else {
+                rowContent
             }
-        } label: {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(recording.transcription?.text ?? "No transcription")
-                        .font(.system(size: 13))
-                        .lineLimit(2)
-                        .foregroundColor(recording.transcription != nil ? .primary : .secondary)
+        }
+        .animation(.easeInOut(duration: 0.12), value: isHovering)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: copied)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+    }
 
-                    Text(formatDate(recording.createdAt))
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary.opacity(0.7))
-                }
+    private var rowContent: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(primaryText)
+                    .font(.system(size: 13))
+                    .lineLimit(2)
+                    .foregroundColor(recording.transcription != nil ? .primary : .secondary)
 
-                Spacer(minLength: 12)
+                Text(formatDate(recording.createdAt))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
 
+            Spacer(minLength: 12)
+
+            if recording.transcription != nil {
                 if copied {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
@@ -519,23 +585,43 @@ private struct HistoryPopoverRow: View {
                         .foregroundColor(.secondary)
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
                 }
+            } else if recording.status == .cancelled {
+                if recording.canRetranscribe {
+                    Button("Re-transcribe") {
+                        appState.retranscribe(recording)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(isReTranscribeDisabled ? .secondary : .accentColor)
+                    .disabled(isReTranscribeDisabled)
+                } else {
+                    Text("Audio expired")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.12), value: isHovering)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: copied)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovering = hovering
-            }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
+        )
+        .contentShape(Rectangle())
+    }
+
+    private var primaryText: String {
+        if let text = recording.transcription?.text {
+            return text
         }
+        if recording.status == .cancelled {
+            return "Canceled recording"
+        }
+        return "No transcription"
+    }
+
+    private var isReTranscribeDisabled: Bool {
+        recording.canRetranscribe == false || appState.recorder.state.isRecording || appState.recorder.state == .processing
     }
 
     private func formatDate(_ date: Date) -> String {

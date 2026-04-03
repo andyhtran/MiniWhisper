@@ -8,10 +8,14 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "MiniWhisper", targets: ["MiniWhisper"])
+        .executable(name: "MiniWhisper", targets: ["MiniWhisper"]),
+        .executable(name: "MiniWhisperDebug", targets: ["MiniWhisperDebug"])
     ],
     dependencies: [
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.9.1")
+        .package(
+            url: "https://github.com/FluidInference/FluidAudio.git",
+            .upToNextMinor(from: "0.12.6")
+        )
     ],
     targets: [
         .executableTarget(
@@ -22,6 +26,17 @@ let package = Package(
             ],
             path: "Sources/MiniWhisper",
             exclude: ["Resources"],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
+        .executableTarget(
+            name: "MiniWhisperDebug",
+            dependencies: [
+                "FluidAudio",
+                "whisper"
+            ],
+            path: "Sources/MiniWhisperDebug",
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]

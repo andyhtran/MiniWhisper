@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import AppKit
+import ServiceManagement
 import UserNotifications
 
 @Observable
@@ -37,6 +38,8 @@ final class AppState: Sendable {
 
     var isModelDownloading: Bool { whisper.isDownloading }
     var modelDownloadProgress: Double { whisper.downloadProgress }
+    var launchAtLoginEnabled: Bool { SMAppService.mainApp.status == .enabled }
+    var launchAtLoginSupported: Bool { SMAppService.mainApp.status != .notFound }
 
     // MARK: - Initialization
 
@@ -154,8 +157,80 @@ final class AppState: Sendable {
         guard recorder.state.isRecording else { return }
         stopDurationChecks()
         onRecordingEnded?()
-        recorder.cancelRecording()
+
+        let duration = recorder.currentDuration
+        let sampleRate = recorder.actualSampleRate
+        let recordingId = currentRecordingId ?? Recording.generateId()
         currentRecordingId = nil
+
+        guard let audioURL = recorder.stopRecording() else {
+            recorder.reset()
+            return
+        }
+        recorder.reset()
+
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64) ?? 0
+        let recording = Recording(
+            id: recordingId,
+            createdAt: Date(),
+            recording: RecordingInfo(
+                duration: duration,
+                sampleRate: sampleRate,
+                channels: 1,
+                fileSize: fileSize,
+                inputDevice: recorder.systemDefaultDeviceName
+            ),
+            transcription: nil,
+            configuration: RecordingConfiguration(
+                voiceModel: transcriptionMode == .english ? "Parakeet" : "Whisper",
+                language: "en"
+            ),
+            status: .cancelled
+        )
+
+        do {
+            try recordingStore.saveWithExistingAudio(recording)
+        } catch {
+            toast.showError(title: "Cancel Save Failed", message: error.localizedDescription)
+        }
+    }
+
+    func retranscribe(_ recording: Recording) {
+        guard recorder.state.isIdle else {
+            toast.showError(title: "Busy", message: "Wait for the current recording/transcription to finish.")
+            return
+        }
+        guard recording.canRetranscribe else {
+            toast.showError(title: "Cannot Re-transcribe", message: "Audio file is no longer available.")
+            return
+        }
+
+        recorder.state = .processing
+
+        Task {
+            await retranscribeCancelledRecording(recording)
+        }
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        let service = SMAppService.mainApp
+        guard service.status != .notFound else {
+            toast.showError(
+                title: "Start on Login Unavailable",
+                message: "This is available only when running the bundled app."
+            )
+            return
+        }
+
+        do {
+            if enabled {
+                try service.register()
+            } else {
+                try service.unregister()
+            }
+        } catch {
+            toast.showError(title: "Start on Login Failed", message: error.localizedDescription)
+        }
     }
 
     // MARK: - Transcription
@@ -213,7 +288,8 @@ final class AppState: Sendable {
                 configuration: RecordingConfiguration(
                     voiceModel: result.model,
                     language: result.language
-                )
+                ),
+                status: .completed
             )
 
             try recordingStore.saveWithExistingAudio(recording)
@@ -243,10 +319,77 @@ final class AppState: Sendable {
                 configuration: RecordingConfiguration(
                     voiceModel: transcriptionMode == .english ? "Parakeet" : "Whisper",
                     language: "en"
-                )
+                ),
+                status: .failed
             )
             // Use saveMetadataOnly for failed recordings since audio may not exist
             try? recordingStore.saveFailedRecording(recording)
+        }
+    }
+
+    private func retranscribeCancelledRecording(_ recording: Recording) async {
+        do {
+            let result: TranscriptionResult
+            switch transcriptionMode {
+            case .english:
+                result = try await parakeet.transcribe(audioURL: recording.audioURL)
+            case .multilingual:
+                result = try await whisper.transcribe(audioURL: recording.audioURL)
+            }
+
+            guard recorder.state == .processing else { return }
+
+            guard !result.text.isEmpty else {
+                recorder.reset()
+                toast.showError(title: "Empty Transcription", message: "No speech detected in recording.")
+                return
+            }
+
+            let finalText: String
+            if replacementSettings.enabled {
+                let processor = ReplacementProcessor(rules: replacementSettings.enabledRules)
+                finalText = processor.apply(to: result.text)
+            } else {
+                finalText = result.text
+            }
+
+            pasteboard.copyAndPaste(finalText)
+
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: recording.audioURL.path)[.size] as? Int64) ?? 0
+            let updatedRecording = Recording(
+                id: recording.id,
+                createdAt: recording.createdAt,
+                recording: RecordingInfo(
+                    duration: recording.recording.duration,
+                    sampleRate: recording.recording.sampleRate,
+                    channels: recording.recording.channels,
+                    fileSize: fileSize,
+                    inputDevice: recording.recording.inputDevice
+                ),
+                transcription: RecordingTranscription(
+                    text: finalText,
+                    segments: result.segments,
+                    language: result.language,
+                    model: result.model,
+                    transcriptionDuration: result.duration
+                ),
+                configuration: RecordingConfiguration(
+                    voiceModel: result.model,
+                    language: result.language
+                ),
+                status: .completed
+            )
+
+            try recordingStore.saveWithExistingAudio(updatedRecording)
+            analyticsStore.record(
+                duration: recording.recording.duration,
+                wordCount: result.text.split(separator: " ").count
+            )
+            recorder.reset()
+        } catch {
+            guard recorder.state == .processing else { return }
+            recorder.reset()
+            toast.showError(title: "Re-transcription Failed", message: error.localizedDescription)
         }
     }
 
