@@ -60,7 +60,14 @@ just dev
 just dev          # Build, package, and launch
 just build        # Debug build only
 just release      # Release build + .app bundle
+just debug-tool   # Build local debug transcription CLI
 just clean        # Remove build artifacts
+```
+
+Run the local debug CLI on an existing audio file or recording directory:
+
+```bash
+just debug-transcribe ~/Code/debug-stt/whisper_cpp.wav --engine whisper --preset current-app
 ```
 
 ## Release
