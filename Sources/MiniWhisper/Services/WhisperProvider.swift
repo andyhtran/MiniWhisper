@@ -2,7 +2,13 @@ import Foundation
 @preconcurrency import AVFoundation
 import whisper
 
+enum WhisperLanguageMode: Sendable {
+    case auto
+    case fixed(String)
+}
+
 struct WhisperTranscriptionOptions: Sendable {
+    let language: WhisperLanguageMode
     let detectLanguage: Bool
     let noTimestamps: Bool
     let singleSegment: Bool
@@ -10,8 +16,9 @@ struct WhisperTranscriptionOptions: Sendable {
 
     static func `default`() -> WhisperTranscriptionOptions {
         WhisperTranscriptionOptions(
+            language: .fixed("en"),
             detectLanguage: false,
-            noTimestamps: true,
+            noTimestamps: false,
             singleSegment: false,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
@@ -51,7 +58,19 @@ final class WhisperContext: @unchecked Sendable {
     func transcribe(samples: [Float]) -> (text: String, language: String) {
         let options = Self.transcriptionOptions()
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
-        params.language = nil
+        var languageCString: UnsafeMutablePointer<CChar>?
+        switch options.language {
+        case .auto:
+            params.language = nil
+        case .fixed(let language):
+            languageCString = strdup(language)
+            params.language = languageCString.map { UnsafePointer($0) }
+        }
+        defer {
+            if let languageCString {
+                free(languageCString)
+            }
+        }
         params.detect_language = options.detectLanguage
         params.print_special = false
         params.print_progress = false
