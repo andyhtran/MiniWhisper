@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import AppKit
-import ServiceManagement
 import UserNotifications
 
 @Observable
@@ -38,8 +37,6 @@ final class AppState: Sendable {
 
     var isModelDownloading: Bool { whisper.isDownloading }
     var modelDownloadProgress: Double { whisper.downloadProgress }
-    var launchAtLoginEnabled: Bool { SMAppService.mainApp.status == .enabled }
-    var launchAtLoginSupported: Bool { SMAppService.mainApp.status != .notFound }
 
     // MARK: - Initialization
 
@@ -209,27 +206,6 @@ final class AppState: Sendable {
 
         Task {
             await retranscribeCancelledRecording(recording)
-        }
-    }
-
-    func setLaunchAtLogin(_ enabled: Bool) {
-        let service = SMAppService.mainApp
-        guard service.status != .notFound else {
-            toast.showError(
-                title: "Start on Login Unavailable",
-                message: "This is available only when running the bundled app."
-            )
-            return
-        }
-
-        do {
-            if enabled {
-                try service.register()
-            } else {
-                try service.unregister()
-            }
-        } catch {
-            toast.showError(title: "Start on Login Failed", message: error.localizedDescription)
         }
     }
 
