@@ -361,6 +361,7 @@ private struct PermissionRow: View {
 
 private struct FooterBarView: View {
     @Environment(AppState.self) private var appState
+    @StateObject private var launchManager = LaunchAtLoginManager.shared
     @State private var showHistory = false
     @State private var showReplacements = false
     @State private var showModelPicker = false
@@ -432,9 +433,9 @@ private struct FooterBarView: View {
             Button {
                 showLaunchAtLogin.toggle()
             } label: {
-                Image(systemName: appState.launchAtLoginEnabled ? "power.circle.fill" : "power.circle")
+                Image(systemName: launchManager.isEnabled ? "power.circle.fill" : "power.circle")
                     .font(.system(size: 14))
-                    .foregroundColor(appState.launchAtLoginEnabled ? .accentColor : .secondary)
+                    .foregroundColor(launchManager.isEnabled ? .accentColor : .secondary)
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
@@ -456,11 +457,14 @@ private struct FooterBarView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .onAppear {
+            launchManager.refresh()
+        }
     }
 }
 
 private struct LaunchAtLoginPopoverView: View {
-    @Environment(AppState.self) private var appState
+    @StateObject private var launchManager = LaunchAtLoginManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -470,25 +474,21 @@ private struct LaunchAtLoginPopoverView: View {
                 .textCase(.uppercase)
                 .tracking(0.5)
 
-            if appState.launchAtLoginSupported {
-                Toggle(
-                    "Start MiniWhisper when you log in",
-                    isOn: Binding(
-                        get: { appState.launchAtLoginEnabled },
-                        set: { appState.setLaunchAtLogin($0) }
-                    )
+            Toggle(
+                "Start MiniWhisper when you log in",
+                isOn: Binding(
+                    get: { launchManager.isEnabled },
+                    set: { launchManager.isEnabled = $0 }
                 )
-                .toggleStyle(.switch)
-                .font(.system(size: 13))
-            } else {
-                Text("Unavailable in this runtime. Build/run the bundled app to enable login item registration.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            )
+            .toggleStyle(.switch)
+            .font(.system(size: 13))
         }
         .padding(12)
         .frame(width: 280)
+        .onAppear {
+            launchManager.refresh()
+        }
     }
 }
 
