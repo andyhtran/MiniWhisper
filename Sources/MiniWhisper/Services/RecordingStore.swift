@@ -31,12 +31,14 @@ final class RecordingStore: Sendable {
         try saveMetadata(recording)
         try saveTranscriptionFiles(recording)
 
+        recordings.removeAll { $0.id == recording.id }
         recordings.insert(recording, at: 0)
         performRetention()
     }
 
     func saveFailedRecording(_ recording: Recording) throws {
         try saveMetadata(recording)
+        recordings.removeAll { $0.id == recording.id }
         recordings.insert(recording, at: 0)
         performRetention()
     }
@@ -75,6 +77,13 @@ final class RecordingStore: Sendable {
 
     var recentRecordings: [Recording] {
         Array(recordings.prefix(3))
+    }
+
+    var recentHistoryItems: [Recording] {
+        let filtered = recordings.filter { recording in
+            recording.transcription != nil || recording.status == .cancelled
+        }
+        return Array(filtered.prefix(3))
     }
 
     // MARK: - Retention
