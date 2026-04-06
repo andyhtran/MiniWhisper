@@ -32,6 +32,16 @@ struct ModelPickerView: View {
                 ) {
                     appState.switchTranscriptionMode(to: .multilingual)
                 }
+
+                ModelRow(
+                    icon: "server.rack",
+                    title: "Custom",
+                    subtitle: "OpenAI-compatible endpoint",
+                    badge: nil,
+                    isSelected: appState.transcriptionMode == .custom
+                ) {
+                    appState.switchTranscriptionMode(to: .custom)
+                }
             }
         }
         .padding(12)
