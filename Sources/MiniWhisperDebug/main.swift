@@ -83,17 +83,21 @@ private struct WhisperTranscriptionOptions: Sendable {
     var tokenTimestamps: Bool
     var splitOnWord: Bool
     var maxLen: Int32
+    var noContext: Bool
+    var temperature: Float
     var threadCount: Int32
 
     static func appDefault() -> WhisperTranscriptionOptions {
         WhisperTranscriptionOptions(
-            language: .auto,
+            language: .fixed("en"),
             detectLanguage: false,
             noTimestamps: true,
             singleSegment: false,
             tokenTimestamps: false,
             splitOnWord: false,
             maxLen: 0,
+            noContext: true,
+            temperature: 0.2,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
     }
@@ -107,6 +111,8 @@ private struct WhisperTranscriptionOptions: Sendable {
             tokenTimestamps: false,
             splitOnWord: false,
             maxLen: 0,
+            noContext: false,
+            temperature: 0.0,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
     }
@@ -120,6 +126,8 @@ private struct WhisperTranscriptionOptions: Sendable {
             tokenTimestamps: true,
             splitOnWord: false,
             maxLen: 1,
+            noContext: false,
+            temperature: 0.0,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
     }
@@ -248,6 +256,8 @@ private final class WhisperContext {
         params.print_timestamps = false
         params.no_timestamps = options.noTimestamps
         params.single_segment = options.singleSegment
+        params.no_context = options.noContext
+        params.temperature = options.temperature
         params.token_timestamps = options.tokenTimestamps
         params.split_on_word = options.splitOnWord
         params.max_len = options.maxLen
