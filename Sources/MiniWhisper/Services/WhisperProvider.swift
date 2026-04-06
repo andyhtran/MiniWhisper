@@ -18,7 +18,7 @@ struct WhisperTranscriptionOptions: Sendable {
         WhisperTranscriptionOptions(
             language: .fixed("en"),
             detectLanguage: false,
-            noTimestamps: false,
+            noTimestamps: true,
             singleSegment: false,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
@@ -78,6 +78,8 @@ final class WhisperContext: @unchecked Sendable {
         params.print_timestamps = false
         params.no_timestamps = options.noTimestamps
         params.single_segment = options.singleSegment
+        params.no_context = true
+        params.temperature = 0.2
         params.n_threads = options.threadCount
 
         let result = samples.withUnsafeBufferPointer { buffer in
