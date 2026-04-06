@@ -113,6 +113,9 @@ private struct RecordingHeaderView: View {
         switch appState.recorder.state {
         case .idle:
             if appState.isModelDownloading { return "Downloading Model..." }
+            if appState.transcriptionMode == .custom && !appState.customProviderSettings.isConfigured {
+                return "Configure Endpoint"
+            }
             return appState.isModelLoaded ? "Ready" : "Loading Model..."
         case .recording: return "Recording"
         case .processing: return "Transcribing..."
@@ -365,18 +368,36 @@ private struct FooterBarView: View {
     @State private var showHistory = false
     @State private var showReplacements = false
     @State private var showModelPicker = false
+    @State private var showCustomConfig = false
     @State private var showLaunchAtLogin = false
 
     var body: some View {
         HStack(spacing: 16) {
             Spacer()
 
+            if appState.transcriptionMode == .custom {
+                Button {
+                    showCustomConfig.toggle()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14))
+                        .foregroundColor(appState.customProviderSettings.isConfigured ? .accentColor : .orange)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("Configure Custom Endpoint")
+                .popover(isPresented: $showCustomConfig, arrowEdge: .bottom) {
+                    CustomEndpointConfigView()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+
             Button {
                 showModelPicker.toggle()
             } label: {
-                Image(systemName: appState.transcriptionMode == .multilingual ? "globe" : "waveform")
+                Image(systemName: modelPickerIcon)
                     .font(.system(size: 14))
-                    .foregroundColor(appState.transcriptionMode == .multilingual ? .accentColor : .secondary)
+                    .foregroundColor(appState.transcriptionMode == .english ? .secondary : .accentColor)
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
@@ -457,8 +478,17 @@ private struct FooterBarView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .animation(.easeInOut(duration: 0.15), value: appState.transcriptionMode)
         .onAppear {
             launchManager.refresh()
+        }
+    }
+
+    private var modelPickerIcon: String {
+        switch appState.transcriptionMode {
+        case .english: return "waveform"
+        case .multilingual: return "globe"
+        case .custom: return "server.rack"
         }
     }
 }
@@ -488,6 +518,58 @@ private struct LaunchAtLoginPopoverView: View {
         .frame(width: 280)
         .onAppear {
             launchManager.refresh()
+        }
+    }
+}
+
+// MARK: - Custom Endpoint Config
+
+private struct CustomEndpointConfigView: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        @Bindable var appState = appState
+
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Custom Endpoint")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Endpoint URL")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    TextField("https://api.example.com/v1/audio/transcriptions", text: $appState.customProviderSettings.endpointURL)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("API Key (optional)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    SecureField("sk-...", text: $appState.customProviderSettings.apiKey)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Model Name")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    TextField("whisper-large-v3", text: $appState.customProviderSettings.modelName)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 300)
+        .onChange(of: appState.customProviderSettings) {
+            appState.customProviderSettings.save()
         }
     }
 }
