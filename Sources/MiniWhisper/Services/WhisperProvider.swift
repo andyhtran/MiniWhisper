@@ -18,7 +18,7 @@ struct WhisperTranscriptionOptions: Sendable {
         WhisperTranscriptionOptions(
             language: .fixed("en"),
             detectLanguage: false,
-            noTimestamps: false,
+            noTimestamps: true,
             singleSegment: false,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
@@ -36,19 +36,21 @@ private final class AudioBufferInputState: @unchecked Sendable {
 
 final class WhisperContext: @unchecked Sendable {
     private let ctx: OpaquePointer
+    private let vadModelPath: String?
 
-    private init(ctx: OpaquePointer) {
+    private init(ctx: OpaquePointer, vadModelPath: String?) {
         self.ctx = ctx
+        self.vadModelPath = vadModelPath
     }
 
-    static func load(from path: String) throws -> WhisperContext {
+    static func load(from path: String, vadModelPath: String?) throws -> WhisperContext {
         var params = whisper_context_default_params()
         params.use_gpu = true
 
         guard let ctx = whisper_init_from_file_with_params(path, params) else {
             throw WhisperError.modelLoadFailed
         }
-        return WhisperContext(ctx: ctx)
+        return WhisperContext(ctx: ctx, vadModelPath: vadModelPath)
     }
 
     static func transcriptionOptions() -> WhisperTranscriptionOptions {
@@ -78,7 +80,22 @@ final class WhisperContext: @unchecked Sendable {
         params.print_timestamps = false
         params.no_timestamps = options.noTimestamps
         params.single_segment = options.singleSegment
+        params.no_context = true
+        params.temperature = 0.0
         params.n_threads = options.threadCount
+
+        if let vadPath = vadModelPath {
+            params.vad = true
+            params.vad_model_path = (vadPath as NSString).utf8String
+            var vadParams = whisper_vad_default_params()
+            vadParams.threshold = 0.5
+            vadParams.min_speech_duration_ms = 250
+            vadParams.min_silence_duration_ms = 100
+            vadParams.max_speech_duration_s = Float.greatestFiniteMagnitude
+            vadParams.speech_pad_ms = 30
+            vadParams.samples_overlap = 0.1
+            params.vad_params = vadParams
+        }
 
         let result = samples.withUnsafeBufferPointer { buffer in
             whisper_full(ctx, params, buffer.baseAddress, Int32(buffer.count))
@@ -142,6 +159,9 @@ final class WhisperProvider: Sendable {
     private static let modelFileName = "ggml-large-v3-turbo-q5_0.bin"
     private static let modelURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin")!
 
+    private static let vadModelFileName = "ggml-silero-v5.1.2.bin"
+    private static let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin")!
+
     static var modelsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport.appendingPathComponent("MiniWhisper/models")
@@ -151,8 +171,16 @@ final class WhisperProvider: Sendable {
         modelsDirectory.appendingPathComponent(modelFileName)
     }
 
+    static var vadModelPath: URL {
+        modelsDirectory.appendingPathComponent(vadModelFileName)
+    }
+
     var modelExists: Bool {
         FileManager.default.fileExists(atPath: Self.modelPath.path)
+    }
+
+    var vadModelExists: Bool {
+        FileManager.default.fileExists(atPath: Self.vadModelPath.path)
     }
 
     func initialize() async throws {
@@ -167,9 +195,13 @@ final class WhisperProvider: Sendable {
             if !modelExists {
                 try await downloadModel()
             }
+            if !vadModelExists {
+                try await downloadVADModel()
+            }
 
             let path = Self.modelPath.path
-            let loaded = try WhisperContext.load(from: path)
+            let vadPath = Self.vadModelPath.path
+            let loaded = try WhisperContext.load(from: path, vadModelPath: vadPath)
             context = loaded
         }
         initTask = task
@@ -260,6 +292,17 @@ final class WhisperProvider: Sendable {
 
         try FileManager.default.moveItem(at: tempURL, to: Self.modelPath)
         session.invalidateAndCancel()
+    }
+
+    private func downloadVADModel() async throws {
+        let dir = Self.modelsDirectory
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let (downloadedURL, response) = try await URLSession.shared.download(from: Self.vadModelURL)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw WhisperError.downloadFailed("VAD model download failed")
+        }
+        try FileManager.default.moveItem(at: downloadedURL, to: Self.vadModelPath)
     }
 
     private nonisolated func resampleTo16kHz(audioURL: URL) throws -> [Float] {
