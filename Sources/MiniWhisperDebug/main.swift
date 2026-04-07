@@ -83,17 +83,21 @@ private struct WhisperTranscriptionOptions: Sendable {
     var tokenTimestamps: Bool
     var splitOnWord: Bool
     var maxLen: Int32
+    var noContext: Bool
+    var temperature: Float
     var threadCount: Int32
 
     static func appDefault() -> WhisperTranscriptionOptions {
         WhisperTranscriptionOptions(
-            language: .auto,
+            language: .fixed("en"),
             detectLanguage: false,
             noTimestamps: true,
             singleSegment: false,
             tokenTimestamps: false,
             splitOnWord: false,
             maxLen: 0,
+            noContext: true,
+            temperature: 0.0,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
     }
@@ -107,6 +111,8 @@ private struct WhisperTranscriptionOptions: Sendable {
             tokenTimestamps: false,
             splitOnWord: false,
             maxLen: 0,
+            noContext: false,
+            temperature: 0.0,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
     }
@@ -120,6 +126,8 @@ private struct WhisperTranscriptionOptions: Sendable {
             tokenTimestamps: true,
             splitOnWord: false,
             maxLen: 1,
+            noContext: false,
+            temperature: 0.0,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
     }
@@ -225,7 +233,7 @@ private final class WhisperContext {
         return WhisperContext(ctx: ctx)
     }
 
-    func transcribe(samples: [Float], options: WhisperTranscriptionOptions) throws -> WhisperDecodeResult {
+    func transcribe(samples: [Float], options: WhisperTranscriptionOptions, vadModelPath: String?) throws -> WhisperDecodeResult {
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         var languageCString: UnsafeMutablePointer<CChar>?
         switch options.language {
@@ -248,10 +256,25 @@ private final class WhisperContext {
         params.print_timestamps = false
         params.no_timestamps = options.noTimestamps
         params.single_segment = options.singleSegment
+        params.no_context = options.noContext
+        params.temperature = options.temperature
         params.token_timestamps = options.tokenTimestamps
         params.split_on_word = options.splitOnWord
         params.max_len = options.maxLen
         params.n_threads = options.threadCount
+
+        if let vadPath = vadModelPath {
+            params.vad = true
+            params.vad_model_path = (vadPath as NSString).utf8String
+            var vadParams = whisper_vad_default_params()
+            vadParams.threshold = 0.5
+            vadParams.min_speech_duration_ms = 250
+            vadParams.min_silence_duration_ms = 100
+            vadParams.max_speech_duration_s = Float.greatestFiniteMagnitude
+            vadParams.speech_pad_ms = 30
+            vadParams.samples_overlap = 0.1
+            params.vad_params = vadParams
+        }
 
         let resultCode = samples.withUnsafeBufferPointer { ptr in
             whisper_full(ctx, params, ptr.baseAddress, Int32(ptr.count))
@@ -293,6 +316,9 @@ private final class WhisperEngine {
     private static let modelFileName = "ggml-large-v3-turbo-q5_0.bin"
     private static let modelURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin")!
 
+    private static let vadModelFileName = "ggml-silero-v5.1.2.bin"
+    private static let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin")!
+
     static var modelsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport.appendingPathComponent("MiniWhisper/models")
@@ -300,6 +326,10 @@ private final class WhisperEngine {
 
     static var modelPath: URL {
         modelsDirectory.appendingPathComponent(modelFileName)
+    }
+
+    static var vadModelPath: URL {
+        modelsDirectory.appendingPathComponent(vadModelFileName)
     }
 
     func initialize() async throws {
@@ -312,6 +342,7 @@ private final class WhisperEngine {
 
         let task = Task<Void, Error> {
             try await Self.ensureModelExists()
+            try await Self.ensureVADModelExists()
             context = try WhisperContext.load(from: Self.modelPath.path)
         }
         initTask = task
@@ -336,7 +367,8 @@ private final class WhisperEngine {
         let samples = try resampleTo16kHz(audioURL: audioURL)
         let audioDuration = Double(samples.count) / 16_000.0
 
-        let decode = try context.transcribe(samples: samples, options: options)
+        let vadPath: String? = FileManager.default.fileExists(atPath: Self.vadModelPath.path) ? Self.vadModelPath.path : nil
+        let decode = try context.transcribe(samples: samples, options: options, vadModelPath: vadPath)
         let trimmed = decode.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         var segments = decode.segments
         if segments.isEmpty && !trimmed.isEmpty {
@@ -371,6 +403,24 @@ private final class WhisperEngine {
         }
         try fm.moveItem(at: downloadedURL, to: temporary)
         try fm.moveItem(at: temporary, to: modelPath)
+    }
+
+    private static func ensureVADModelExists() async throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: vadModelPath.path) {
+            return
+        }
+
+        try fm.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+        let (downloadedURL, response) = try await URLSession.shared.download(from: vadModelURL)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw CLIError.modelLoadFailed
+        }
+
+        if fm.fileExists(atPath: vadModelPath.path) {
+            return
+        }
+        try fm.moveItem(at: downloadedURL, to: vadModelPath)
     }
 
     private func resampleTo16kHz(audioURL: URL) throws -> [Float] {

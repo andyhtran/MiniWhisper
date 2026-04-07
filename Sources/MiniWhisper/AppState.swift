@@ -9,6 +9,7 @@ final class AppState: Sendable {
     let recorder = AudioRecorder()
     let parakeet = ParakeetProvider()
     let whisper = WhisperProvider()
+    let customProvider = CustomProvider()
     let recordingStore = RecordingStore()
     let analyticsStore = AnalyticsStore()
     let permissions = PermissionsManager()
@@ -17,6 +18,7 @@ final class AppState: Sendable {
 
     var replacementSettings = ReplacementSettings.load()
     var transcriptionMode: TranscriptionMode = TranscriptionModeStorage.load()
+    var customProviderSettings = CustomProviderSettings.load()
 
     let maxRecordingDuration: TimeInterval = 600.0  // 10 minutes
     var warningDuration: TimeInterval { maxRecordingDuration * 0.8 }  // 8 minutes
@@ -32,6 +34,7 @@ final class AppState: Sendable {
         switch transcriptionMode {
         case .english: return parakeet.isInitialized
         case .multilingual: return whisper.isInitialized
+        case .custom: return customProviderSettings.isConfigured
         }
     }
 
@@ -49,6 +52,8 @@ final class AppState: Sendable {
                 case .multilingual:
                     guard whisper.modelExists else { return }
                     try await whisper.initialize()
+                case .custom:
+                    break
                 }
             } catch {
                 toast.showError(title: "Model Load Failed", message: error.localizedDescription)
@@ -71,6 +76,7 @@ final class AppState: Sendable {
         switch transcriptionMode {
         case .english: parakeet.unload()
         case .multilingual: whisper.unload()
+        case .custom: break
         }
 
         transcriptionMode = mode
@@ -83,6 +89,8 @@ final class AppState: Sendable {
                     try await parakeet.initialize()
                 case .multilingual:
                     try await whisper.initialize()
+                case .custom:
+                    break
                 }
             } catch {
                 toast.showError(title: "Model Load Failed", message: error.localizedDescription)
@@ -103,7 +111,11 @@ final class AppState: Sendable {
     func startRecording() {
         guard recorder.state.isIdle else { return }
         guard isModelLoaded else {
-            toast.showError(title: "Model Not Ready", message: "Please wait for the model to finish loading.")
+            if transcriptionMode == .custom {
+                toast.showError(title: "Not Configured", message: "Configure your custom endpoint before recording.")
+            } else {
+                toast.showError(title: "Model Not Ready", message: "Please wait for the model to finish loading.")
+            }
             return
         }
 
@@ -179,7 +191,7 @@ final class AppState: Sendable {
             ),
             transcription: nil,
             configuration: RecordingConfiguration(
-                voiceModel: transcriptionMode == .english ? "Parakeet" : "Whisper",
+                voiceModel: transcriptionMode.modelDisplayName,
                 language: "en"
             ),
             status: .cancelled
@@ -219,6 +231,8 @@ final class AppState: Sendable {
                 result = try await parakeet.transcribe(audioURL: audioURL)
             case .multilingual:
                 result = try await whisper.transcribe(audioURL: audioURL)
+            case .custom:
+                result = try await customProvider.transcribe(audioURL: audioURL, settings: customProviderSettings)
             }
 
             // Guard against stale callback: if the user rapid-tapped and started a new
@@ -293,7 +307,7 @@ final class AppState: Sendable {
                 ),
                 transcription: nil,
                 configuration: RecordingConfiguration(
-                    voiceModel: transcriptionMode == .english ? "Parakeet" : "Whisper",
+                    voiceModel: transcriptionMode.modelDisplayName,
                     language: "en"
                 ),
                 status: .failed
@@ -311,6 +325,8 @@ final class AppState: Sendable {
                 result = try await parakeet.transcribe(audioURL: recording.audioURL)
             case .multilingual:
                 result = try await whisper.transcribe(audioURL: recording.audioURL)
+            case .custom:
+                result = try await customProvider.transcribe(audioURL: recording.audioURL, settings: customProviderSettings)
             }
 
             guard recorder.state == .processing else { return }
