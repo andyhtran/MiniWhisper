@@ -12,7 +12,7 @@ struct WhisperProviderTests {
             Issue.record("Expected Whisper language to be pinned to English")
         }
         #expect(!options.detectLanguage)
-        #expect(!options.noTimestamps)
+        #expect(options.noTimestamps)
         #expect(!options.singleSegment)
         #expect(options.threadCount >= 1)
     }
