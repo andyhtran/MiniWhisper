@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreAudio
+import os
 
 enum RecordingState: Equatable, Sendable {
     case idle
@@ -19,18 +20,39 @@ enum RecordingState: Equatable, Sendable {
     }
 }
 
+/// Thread-safe bridge for passing RMS meter values from CoreAudio's real-time
+/// callback thread to the MainActor-isolated AudioRecorder. Uses atomic-style
+/// access through os_unfair_lock so the audio thread never blocks.
+final class MeterBridge: Sendable {
+    private let _lock = OSAllocatedUnfairLock(initialState: Float(0))
+
+    func store(_ value: Float) {
+        _lock.withLock { $0 = value }
+    }
+
+    func load() -> Float {
+        _lock.withLock { $0 }
+    }
+}
+
 @MainActor
 @Observable
 final class AudioRecorder: Sendable {
     var state: RecordingState = .idle
     var currentDuration: TimeInterval = 0
     var actualSampleRate: Double = 44100
+    /// Normalized microphone level (0...1) for menu bar meter display.
+    /// Updated ~10-12 Hz while recording; resets to 0 when not recording.
+    var meterLevel: Double = 0
 
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
     private var durationTimer: Timer?
     private var recordingStartTime: Date?
+    private let meterBridge = MeterBridge()
+    /// Smoothed dBFS value retained between timer ticks for asymmetric smoothing
+    private var smoothedDB: Float = -60
 
     /// Start recording to the given URL, optionally binding a specific input device.
     /// When deviceID is nil, AVAudioEngine uses the system default input device.
@@ -129,10 +151,14 @@ final class AudioRecorder: Sendable {
         recordingStartTime = Date()
         state = .recording
 
+        // ~10 Hz timer for both duration display and meter level updates.
+        // Polling the meter bridge here instead of dispatching from the audio
+        // callback avoids flooding SwiftUI with per-buffer updates (~40-50/sec).
         durationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let start = self.recordingStartTime else { return }
                 self.currentDuration = Date().timeIntervalSince(start)
+                self.updateMeterLevel()
             }
         }
     }
@@ -148,6 +174,7 @@ final class AudioRecorder: Sendable {
     ) {
         let unsafeFile = file
         let channelCount = format.channelCount
+        let bridge = meterBridge
 
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, _ in
             let frameLength = Int(buffer.frameLength)
@@ -155,6 +182,15 @@ final class AudioRecorder: Sendable {
 
             // Float32 path (standard)
             if let channelData = buffer.floatChannelData {
+                // Compute RMS from channel 0 for the meter bridge
+                var sumOfSquares: Float = 0
+                let ch0 = channelData[0]
+                for i in 0..<frameLength {
+                    sumOfSquares += ch0[i] * ch0[i]
+                }
+                let rms = sqrtf(sumOfSquares / Float(frameLength))
+                bridge.store(rms)
+
                 if channelCount == 1 && format.commonFormat == .pcmFormatFloat32 {
                     try? unsafeFile.write(from: buffer)
                 } else {
@@ -192,6 +228,16 @@ final class AudioRecorder: Sendable {
                         monoData[0][i] = Float(int16Buffer[i]) / Float(Int16.max)
                     }
                 }
+
+                // Compute RMS from the converted float samples
+                if let monoData = monoBuffer.floatChannelData {
+                    var sumOfSquares: Float = 0
+                    for i in 0..<frameLength {
+                        sumOfSquares += monoData[0][i] * monoData[0][i]
+                    }
+                    bridge.store(sqrtf(sumOfSquares / Float(frameLength)))
+                }
+
                 try? unsafeFile.write(from: monoBuffer)
             }
         }
@@ -217,6 +263,40 @@ final class AudioRecorder: Sendable {
         }
     }
 
+    // MARK: - Meter
+
+    /// Reads the latest RMS from the audio thread bridge, converts to dBFS,
+    /// applies a noise gate and asymmetric smoothing, then normalizes to 0...1.
+    private func updateMeterLevel() {
+        let rms = meterBridge.load()
+        let db = AudioRecorder.rmsToDBFS(rms)
+
+        // Asymmetric smoothing: rise fast so speech feels responsive,
+        // fall slow so bars don't flicker between words.
+        let alpha: Float = db > smoothedDB ? 0.6 : 0.15
+        smoothedDB += alpha * (db - smoothedDB)
+
+        meterLevel = AudioRecorder.normalizeMeter(dbFS: smoothedDB)
+    }
+
+    /// Convert linear RMS amplitude to dBFS. Clamps silence to -60 dB
+    /// to avoid -inf from log10(0).
+    nonisolated static func rmsToDBFS(_ rms: Float) -> Float {
+        guard rms > 0 else { return -60 }
+        return max(20 * log10f(rms), -60)
+    }
+
+    /// Map dBFS into 0...1 with a noise gate. Anything below the gate
+    /// (about -42 dBFS, typical room/fan noise floor) maps to 0.
+    /// Speech range roughly -42 to -12 dBFS maps linearly to 0...1.
+    nonisolated static func normalizeMeter(dbFS: Float) -> Double {
+        let gate: Float = -42
+        let ceiling: Float = -12
+        guard dbFS > gate else { return 0 }
+        let normalized = (dbFS - gate) / (ceiling - gate)
+        return Double(min(max(normalized, 0), 1))
+    }
+
     func stopRecording() -> URL? {
         guard state.isRecording else { return nil }
 
@@ -224,7 +304,8 @@ final class AudioRecorder: Sendable {
         let url = recordingURL
         recordingURL = nil
         recordingStartTime = nil
-
+        meterLevel = 0
+        smoothedDB = -60
 
         state = .processing
         return url
@@ -244,6 +325,8 @@ final class AudioRecorder: Sendable {
         recordingURL = nil
         recordingStartTime = nil
         currentDuration = 0
+        meterLevel = 0
+        smoothedDB = -60
 
         state = .idle
     }
@@ -268,6 +351,8 @@ final class AudioRecorder: Sendable {
 
     func reset() {
         currentDuration = 0
+        meterLevel = 0
+        smoothedDB = -60
 
         state = .idle
     }
