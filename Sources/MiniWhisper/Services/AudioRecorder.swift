@@ -260,10 +260,8 @@ final class AudioRecorder: Sendable {
 
         // Keep engine alive briefly so CoreAudio can drain in-flight callbacks
         if let engine {
-            nonisolated(unsafe) let ref = engine
-            Task.detached {
-                try? await Task.sleep(for: .seconds(0.5))
-                withExtendedLifetime(ref) {}
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                withExtendedLifetime(engine) {}
             }
         }
     }
