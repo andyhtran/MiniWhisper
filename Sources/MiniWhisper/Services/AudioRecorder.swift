@@ -65,7 +65,14 @@ final class AudioRecorder: Sendable {
         }
 
         let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        // Routed devices need inputFormat — outputFormat still reflects the
+        // system default's format even after CurrentDevice binding.
+        let inputFormat: AVAudioFormat
+        if deviceID != nil {
+            inputFormat = inputNode.inputFormat(forBus: 0)
+        } else {
+            inputFormat = inputNode.outputFormat(forBus: 0)
+        }
 
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw RecordingError.noInputAvailable
@@ -98,6 +105,24 @@ final class AudioRecorder: Sendable {
         // Start engine with retry for post-sleep hardware wake-up
         try startEngineWithRetry(engine)
 
+        // Verify device routing survived engine.start() — some configurations
+        // reset the binding during startup (observed with Bluetooth devices).
+        if let deviceID {
+            var currentDeviceID = AudioDeviceID(0)
+            var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+            AudioUnitGetProperty(
+                engine.inputNode.audioUnit!,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &currentDeviceID,
+                &size
+            )
+            if currentDeviceID != deviceID {
+                print("[AudioRecorder] Warning: device routing reset after start (expected \(deviceID), got \(currentDeviceID))")
+            }
+        }
+
         audioEngine = engine
         audioFile = file
         recordingURL = url
@@ -125,13 +150,36 @@ final class AudioRecorder: Sendable {
         let channelCount = format.channelCount
 
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, _ in
-            guard let channelData = buffer.floatChannelData else { return }
             let frameLength = Int(buffer.frameLength)
             guard frameLength > 0 else { return }
 
-            if channelCount == 1 && format.commonFormat == .pcmFormatFloat32 {
-                try? unsafeFile.write(from: buffer)
-            } else {
+            // Float32 path (standard)
+            if let channelData = buffer.floatChannelData {
+                if channelCount == 1 && format.commonFormat == .pcmFormatFloat32 {
+                    try? unsafeFile.write(from: buffer)
+                } else {
+                    guard let monoBuffer = AVAudioPCMBuffer(
+                        pcmFormat: wavFormat,
+                        frameCapacity: buffer.frameCapacity
+                    ) else { return }
+                    monoBuffer.frameLength = buffer.frameLength
+
+                    if let monoData = monoBuffer.floatChannelData {
+                        for i in 0..<frameLength {
+                            var sample: Float = 0
+                            for ch in 0..<Int(channelCount) {
+                                sample += channelData[ch][i]
+                            }
+                            monoData[0][i] = sample / Float(channelCount)
+                        }
+                    }
+                    try? unsafeFile.write(from: monoBuffer)
+                }
+                return
+            }
+
+            // Int16 path — some USB microphones deliver int16ChannelData
+            if let int16Data = buffer.int16ChannelData {
                 guard let monoBuffer = AVAudioPCMBuffer(
                     pcmFormat: wavFormat,
                     frameCapacity: buffer.frameCapacity
@@ -139,12 +187,9 @@ final class AudioRecorder: Sendable {
                 monoBuffer.frameLength = buffer.frameLength
 
                 if let monoData = monoBuffer.floatChannelData {
+                    let int16Buffer = UnsafeBufferPointer(start: int16Data[0], count: frameLength)
                     for i in 0..<frameLength {
-                        var sample: Float = 0
-                        for ch in 0..<Int(channelCount) {
-                            sample += channelData[ch][i]
-                        }
-                        monoData[0][i] = sample / Float(channelCount)
+                        monoData[0][i] = Float(int16Buffer[i]) / Float(Int16.max)
                     }
                 }
                 try? unsafeFile.write(from: monoBuffer)
@@ -206,10 +251,19 @@ final class AudioRecorder: Sendable {
     private func tearDownEngine() {
         durationTimer?.invalidate()
         durationTimer = nil
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        audioEngine?.stop()
+        let engine = audioEngine
+        engine?.inputNode.removeTap(onBus: 0)
+        engine?.stop()
+        engine?.reset()  // CoreAudio synchronization barrier
         audioEngine = nil
         audioFile = nil
+
+        // Keep engine alive briefly so CoreAudio can drain in-flight callbacks
+        if let engine {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                withExtendedLifetime(engine) {}
+            }
+        }
     }
 
     func reset() {
