@@ -32,6 +32,12 @@ brew tap andyhtran/tap
 brew install --cask miniwhisper
 ```
 
+To update:
+
+```bash
+brew update && brew upgrade --cask miniwhisper
+```
+
 ### Build from source
 
 Requires macOS 14+ (Sonoma) and Swift 6+.
