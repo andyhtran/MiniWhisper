@@ -25,26 +25,45 @@ final class AudioRecorder: Sendable {
     var state: RecordingState = .idle
     var currentDuration: TimeInterval = 0
     var actualSampleRate: Double = 44100
-    var systemDefaultDeviceName: String = "System Default"
 
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
     private var durationTimer: Timer?
     private var recordingStartTime: Date?
-    init() {
-        systemDefaultDeviceName = Self.querySystemDefaultInputName()
-        installDeviceChangeListener()
-    }
 
-    func refreshDeviceName() {
-        systemDefaultDeviceName = Self.querySystemDefaultInputName()
-    }
-
-    func startRecording(to url: URL) throws {
+    /// Start recording to the given URL, optionally binding a specific input device.
+    /// When deviceID is nil, AVAudioEngine uses the system default input device.
+    /// When deviceID is provided, the engine's input node is bound to that specific
+    /// device before any format queries, so recording captures from the chosen mic
+    /// without changing the macOS system default.
+    func startRecording(to url: URL, deviceID: AudioDeviceID? = nil) throws {
         guard state.isIdle else { return }
 
         let engine = AVAudioEngine()
+
+        // Bind a specific input device before accessing the input node's format.
+        // This must happen before outputFormat(forBus:) because that call causes
+        // the engine to configure itself against whatever device is currently set.
+        if let deviceID {
+            let inputNode = engine.inputNode
+            guard let audioUnit = inputNode.audioUnit else {
+                throw RecordingError.deviceBindingFailed
+            }
+            var devID = deviceID
+            let status = AudioUnitSetProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &devID,
+                UInt32(MemoryLayout<AudioDeviceID>.size)
+            )
+            guard status == noErr else {
+                throw RecordingError.deviceBindingFailed
+            }
+        }
+
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
@@ -198,78 +217,16 @@ final class AudioRecorder: Sendable {
 
         state = .idle
     }
-
-    // MARK: - Device Change Listener
-
-    private func installDeviceChangeListener() {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            DispatchQueue.main
-        ) { [weak self] _, _ in
-            guard let self else { return }
-            Task { @MainActor in
-                self.refreshDeviceName()
-            }
-        }
-    }
-
-    private nonisolated static func querySystemDefaultInputName() -> String {
-        var deviceID = AudioObjectID(0)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size = UInt32(MemoryLayout<AudioObjectID>.size)
-
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0, nil,
-            &size,
-            &deviceID
-        )
-
-        guard status == noErr, deviceID != kAudioObjectUnknown else {
-            return "System Default"
-        }
-
-        var nameAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceNameCFString,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var nameRef: Unmanaged<CFString>?
-        var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-
-        let nameStatus = AudioObjectGetPropertyData(
-            deviceID,
-            &nameAddress,
-            0, nil,
-            &nameSize,
-            &nameRef
-        )
-
-        if nameStatus == noErr, let cfName = nameRef?.takeRetainedValue() {
-            return cfName as String
-        }
-        return "System Default"
-    }
 }
 
 enum RecordingError: LocalizedError {
     case noInputAvailable
+    case deviceBindingFailed
 
     var errorDescription: String? {
         switch self {
         case .noInputAvailable: return "No audio input device available"
+        case .deviceBindingFailed: return "Failed to bind the selected microphone"
         }
     }
 }

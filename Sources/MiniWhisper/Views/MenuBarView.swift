@@ -155,49 +155,147 @@ private struct SectionHeader: View {
 
 private struct MicrophoneSection: View {
     @Environment(AppState.self) private var appState
-    @State private var isRefreshHovering = false
+    @State private var showPicker = false
+    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                SectionHeader(title: "Microphone", icon: "mic.fill")
+            SectionHeader(title: "Microphone", icon: "mic.fill")
 
-                Spacer()
+            Button {
+                showPicker.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Text(appState.deviceManager.effectiveDeviceName)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
-                Button {
-                    appState.recorder.refreshDeviceName()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10))
-                        .foregroundColor(isRefreshHovering ? .primary : .secondary)
+                    Spacer(minLength: 12)
+
+                    if appState.deviceManager.inputMode == .systemDefault {
+                        Text("System Default")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    } else if !appState.deviceManager.isSelectedDeviceAvailable {
+                        Text("Unavailable")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                    }
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
-                .help("Refresh microphone")
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        isRefreshHovering = hovering
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isHovering = hovering
+                }
+            }
+            .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+                MicrophonePickerView()
+            }
+        }
+    }
+}
+
+private struct MicrophonePickerView: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Input Device")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .padding(.horizontal, 10)
+
+            VStack(spacing: 2) {
+                // System Default option
+                MicPickerRow(
+                    name: "System Default",
+                    subtitle: appState.deviceManager.systemDefaultDeviceName,
+                    isSelected: appState.deviceManager.inputMode == .systemDefault
+                ) {
+                    appState.deviceManager.selectSystemDefault()
+                }
+
+                if !appState.deviceManager.availableDevices.isEmpty {
+                    Divider()
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 2)
+
+                    ForEach(appState.deviceManager.availableDevices) { device in
+                        MicPickerRow(
+                            name: device.name,
+                            subtitle: nil,
+                            isSelected: appState.deviceManager.inputMode == .specificDevice
+                                && appState.deviceManager.selectedDeviceUID == device.uid
+                        ) {
+                            appState.deviceManager.selectDevice(device)
+                        }
                     }
                 }
             }
+        }
+        .padding(12)
+        .frame(width: 280)
+    }
+}
 
+private struct MicPickerRow: View {
+    let name: String
+    let subtitle: String?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 8) {
-                Text(appState.recorder.systemDefaultDeviceName)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(.system(size: 13))
+                        .foregroundColor(.primary)
 
-                Spacer(minLength: 12)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
 
-                Text("System Default")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.primary.opacity(0.08))
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
             )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovering = hovering
+            }
         }
     }
 }
