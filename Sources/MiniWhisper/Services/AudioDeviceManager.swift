@@ -126,6 +126,8 @@ final class AudioDeviceManager: Sendable {
                   let name = getDeviceName(deviceID) else {
                 return nil
             }
+            // CoreAudio aggregate pseudo-devices can't be directly captured
+            if uid.hasPrefix("CADefaultDeviceAggregate") { return nil }
             return AudioInputDevice(id: deviceID, uid: uid, name: name)
         }
     }
