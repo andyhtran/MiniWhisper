@@ -27,6 +27,7 @@ final class AppState: Sendable {
     private var warningShown = false
     private var durationCheckTimer: Timer?
     private var currentRecordingId: String?
+    private var captureTransitionInFlight = false
 
     var onRecordingStarted: (() -> Void)?
     var onRecordingEnded: (() -> Void)?
@@ -41,6 +42,18 @@ final class AppState: Sendable {
 
     var isModelDownloading: Bool { whisper.isDownloading }
     var modelDownloadProgress: Double { whisper.downloadProgress }
+
+    init() {
+        recorder.onRecordingInterrupted = { [weak self] message in
+            guard let self else { return }
+            stopDurationChecks()
+            onRecordingEnded?()
+            currentRecordingId = nil
+            captureTransitionInFlight = false
+            toast.showError(title: "Recording Failed", message: message)
+            recorder.reset()
+        }
+    }
 
     // MARK: - Initialization
 
@@ -110,109 +123,15 @@ final class AppState: Sendable {
     }
 
     func startRecording() {
-        guard recorder.state.isIdle else { return }
-        guard isModelLoaded else {
-            if transcriptionMode == .custom {
-                toast.showError(title: "Not Configured", message: "Configure your custom endpoint before recording.")
-            } else {
-                toast.showError(title: "Model Not Ready", message: "Please wait for the model to finish loading.")
-            }
-            return
-        }
-
-        let recordingId = Recording.generateId()
-        currentRecordingId = recordingId
-        warningShown = false
-
-        // Resolve the selected mic. nil means use system default.
-        let deviceID = deviceManager.resolveDeviceID()
-        if deviceManager.inputMode == .specificDevice && deviceID == nil {
-            toast.show(ToastMessage(
-                type: .warning,
-                title: "Mic Unavailable",
-                message: "Selected mic not found, using system default"
-            ))
-        }
-
-        let dir = Recording.baseDirectory.appendingPathComponent(recordingId)
-        let audioURL = dir.appendingPathComponent("audio.wav")
-
-        do {
-            try recorder.startRecording(to: audioURL, deviceID: deviceID)
-            startDurationChecks()
-            onRecordingStarted?()
-        } catch {
-            toast.showError(title: "Recording Failed", message: error.localizedDescription)
-            recorder.reset()
-        }
+        Task { await startRecordingFlow() }
     }
 
     func stopAndTranscribe() {
-        guard recorder.state.isRecording else { return }
-
-        stopDurationChecks()
-        onRecordingEnded?()
-
-        let duration = recorder.currentDuration
-        let sampleRate = recorder.actualSampleRate
-        guard duration >= 1.0 else {
-            recorder.cancelRecording()
-            return
-        }
-
-        guard let audioURL = recorder.stopRecording() else {
-            recorder.reset()
-            return
-        }
-
-        let recordingId = currentRecordingId ?? Recording.generateId()
-        currentRecordingId = nil
-
-        Task {
-            await transcribe(audioURL: audioURL, recordingId: recordingId, duration: duration, sampleRate: sampleRate)
-        }
+        Task { await stopAndTranscribeFlow() }
     }
 
     func cancelRecording() {
-        guard recorder.state.isRecording else { return }
-        stopDurationChecks()
-        onRecordingEnded?()
-
-        let duration = recorder.currentDuration
-        let sampleRate = recorder.actualSampleRate
-        let recordingId = currentRecordingId ?? Recording.generateId()
-        currentRecordingId = nil
-
-        guard let audioURL = recorder.stopRecording() else {
-            recorder.reset()
-            return
-        }
-        recorder.reset()
-
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64) ?? 0
-        let recording = Recording(
-            id: recordingId,
-            createdAt: Date(),
-            recording: RecordingInfo(
-                duration: duration,
-                sampleRate: sampleRate,
-                channels: 1,
-                fileSize: fileSize,
-                inputDevice: deviceManager.effectiveDeviceName
-            ),
-            transcription: nil,
-            configuration: RecordingConfiguration(
-                voiceModel: transcriptionMode.modelDisplayName,
-                language: "en"
-            ),
-            status: .cancelled
-        )
-
-        do {
-            try recordingStore.saveWithExistingAudio(recording)
-        } catch {
-            toast.showError(title: "Cancel Save Failed", message: error.localizedDescription)
-        }
+        Task { await cancelRecordingFlow() }
     }
 
     func retranscribe(_ recording: Recording) {
@@ -234,7 +153,7 @@ final class AppState: Sendable {
 
     // MARK: - Transcription
 
-    private func transcribe(audioURL: URL, recordingId: String, duration: TimeInterval, sampleRate: Double) async {
+    private func transcribe(audioURL: URL, recordingId: String, duration: TimeInterval, sampleRate: Double, inputDeviceName: String) async {
         do {
             let result: TranscriptionResult
             switch transcriptionMode {
@@ -277,7 +196,7 @@ final class AppState: Sendable {
                     sampleRate: sampleRate,
                     channels: 1,
                     fileSize: fileSize,
-                    inputDevice: deviceManager.effectiveDeviceName
+                    inputDevice: inputDeviceName
                 ),
                 transcription: RecordingTranscription(
                     text: finalText,
@@ -314,7 +233,7 @@ final class AppState: Sendable {
                     sampleRate: sampleRate,
                     channels: 1,
                     fileSize: 0,
-                    inputDevice: deviceManager.effectiveDeviceName
+                    inputDevice: inputDeviceName
                 ),
                 transcription: nil,
                 configuration: RecordingConfiguration(
@@ -434,6 +353,141 @@ final class AppState: Sendable {
 
         if duration >= maxRecordingDuration {
             stopAndTranscribe()
+        }
+    }
+
+    private func startRecordingFlow() async {
+        guard !captureTransitionInFlight else { return }
+        captureTransitionInFlight = true
+        defer { captureTransitionInFlight = false }
+
+        guard recorder.state.isIdle else { return }
+        guard isModelLoaded else {
+            if transcriptionMode == .custom {
+                toast.showError(title: "Not Configured", message: "Configure your custom endpoint before recording.")
+            } else {
+                toast.showError(title: "Model Not Ready", message: "Please wait for the model to finish loading.")
+            }
+            return
+        }
+
+        let recordingId = Recording.generateId()
+        currentRecordingId = recordingId
+        warningShown = false
+
+        guard let resolvedDevice = deviceManager.resolveRecordingDevice() else {
+            toast.showError(title: "Recording Failed", message: "No audio input device available")
+            recorder.reset()
+            currentRecordingId = nil
+            return
+        }
+
+        if resolvedDevice.requestedMode == .specificDevice && resolvedDevice.didFallbackToSystemDefault {
+            toast.show(ToastMessage(
+                type: .warning,
+                title: "Mic Unavailable",
+                message: "Selected mic not found, using system default"
+            ))
+        }
+
+        let dir = Recording.baseDirectory.appendingPathComponent(recordingId)
+        let audioURL = dir.appendingPathComponent("audio.wav")
+
+        do {
+            try await recorder.startRecording(to: audioURL, resolvedDevice: resolvedDevice)
+            startDurationChecks()
+            onRecordingStarted?()
+        } catch {
+            toast.showError(title: "Recording Failed", message: error.localizedDescription)
+            recorder.reset()
+            currentRecordingId = nil
+        }
+    }
+
+    private func stopAndTranscribeFlow() async {
+        guard !captureTransitionInFlight else { return }
+        captureTransitionInFlight = true
+        defer { captureTransitionInFlight = false }
+
+        guard recorder.state.isRecording else { return }
+
+        stopDurationChecks()
+        onRecordingEnded?()
+
+        let duration = recorder.currentDuration
+        let sampleRate = recorder.actualSampleRate
+        let inputDeviceName = recorder.actualInputDeviceName
+
+        guard duration >= 1.0 else {
+            await recorder.cancelRecording()
+            recorder.reset()
+            currentRecordingId = nil
+            return
+        }
+
+        guard let audioURL = await recorder.stopRecording() else {
+            recorder.reset()
+            currentRecordingId = nil
+            return
+        }
+
+        let recordingId = currentRecordingId ?? Recording.generateId()
+        currentRecordingId = nil
+
+        await transcribe(
+            audioURL: audioURL,
+            recordingId: recordingId,
+            duration: duration,
+            sampleRate: sampleRate,
+            inputDeviceName: inputDeviceName
+        )
+    }
+
+    private func cancelRecordingFlow() async {
+        guard !captureTransitionInFlight else { return }
+        captureTransitionInFlight = true
+        defer { captureTransitionInFlight = false }
+
+        guard recorder.state.isRecording else { return }
+
+        stopDurationChecks()
+        onRecordingEnded?()
+
+        let duration = recorder.currentDuration
+        let sampleRate = recorder.actualSampleRate
+        let inputDeviceName = recorder.actualInputDeviceName
+        let recordingId = currentRecordingId ?? Recording.generateId()
+        currentRecordingId = nil
+
+        guard let audioURL = await recorder.stopRecording() else {
+            recorder.reset()
+            return
+        }
+        recorder.reset()
+
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64) ?? 0
+        let recording = Recording(
+            id: recordingId,
+            createdAt: Date(),
+            recording: RecordingInfo(
+                duration: duration,
+                sampleRate: sampleRate,
+                channels: 1,
+                fileSize: fileSize,
+                inputDevice: inputDeviceName
+            ),
+            transcription: nil,
+            configuration: RecordingConfiguration(
+                voiceModel: transcriptionMode.modelDisplayName,
+                language: "en"
+            ),
+            status: .cancelled
+        )
+
+        do {
+            try recordingStore.saveWithExistingAudio(recording)
+        } catch {
+            toast.showError(title: "Cancel Save Failed", message: error.localizedDescription)
         }
     }
 
