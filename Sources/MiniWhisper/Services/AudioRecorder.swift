@@ -287,11 +287,11 @@ final class AudioRecorder: Sendable {
     }
 
     /// Map dBFS into 0...1 with a noise gate. Anything below the gate
-    /// (about -42 dBFS, typical room/fan noise floor) maps to 0.
-    /// Speech range roughly -42 to -12 dBFS maps linearly to 0...1.
+    /// maps to 0. The wider range (-50 to -18) lets speech at arm's length
+    /// register clearly while still filtering out most room ambience.
     nonisolated static func normalizeMeter(dbFS: Float) -> Double {
-        let gate: Float = -42
-        let ceiling: Float = -12
+        let gate: Float = -50
+        let ceiling: Float = -18
         guard dbFS > gate else { return 0 }
         let normalized = (dbFS - gate) / (ceiling - gate)
         return Double(min(max(normalized, 0), 1))
