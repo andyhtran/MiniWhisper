@@ -7,6 +7,7 @@ import UserNotifications
 @MainActor
 final class AppState: Sendable {
     let recorder = AudioRecorder()
+    let deviceManager = AudioDeviceManager()
     let parakeet = ParakeetProvider()
     let whisper = WhisperProvider()
     let customProvider = CustomProvider()
@@ -123,11 +124,21 @@ final class AppState: Sendable {
         currentRecordingId = recordingId
         warningShown = false
 
+        // Resolve the selected mic. nil means use system default.
+        let deviceID = deviceManager.resolveDeviceID()
+        if deviceManager.inputMode == .specificDevice && deviceID == nil {
+            toast.show(ToastMessage(
+                type: .warning,
+                title: "Mic Unavailable",
+                message: "Selected mic not found, using system default"
+            ))
+        }
+
         let dir = Recording.baseDirectory.appendingPathComponent(recordingId)
         let audioURL = dir.appendingPathComponent("audio.wav")
 
         do {
-            try recorder.startRecording(to: audioURL)
+            try recorder.startRecording(to: audioURL, deviceID: deviceID)
             startDurationChecks()
             onRecordingStarted?()
         } catch {
@@ -187,7 +198,7 @@ final class AppState: Sendable {
                 sampleRate: sampleRate,
                 channels: 1,
                 fileSize: fileSize,
-                inputDevice: recorder.systemDefaultDeviceName
+                inputDevice: deviceManager.effectiveDeviceName
             ),
             transcription: nil,
             configuration: RecordingConfiguration(
@@ -266,7 +277,7 @@ final class AppState: Sendable {
                     sampleRate: sampleRate,
                     channels: 1,
                     fileSize: fileSize,
-                    inputDevice: recorder.systemDefaultDeviceName
+                    inputDevice: deviceManager.effectiveDeviceName
                 ),
                 transcription: RecordingTranscription(
                     text: finalText,
@@ -303,7 +314,7 @@ final class AppState: Sendable {
                     sampleRate: sampleRate,
                     channels: 1,
                     fileSize: 0,
-                    inputDevice: recorder.systemDefaultDeviceName
+                    inputDevice: deviceManager.effectiveDeviceName
                 ),
                 transcription: nil,
                 configuration: RecordingConfiguration(
