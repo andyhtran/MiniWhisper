@@ -8,6 +8,13 @@ struct AudioInputDevice: Sendable, Identifiable {
     let name: String
 }
 
+struct ResolvedRecordingDevice: Sendable {
+    let deviceID: AudioDeviceID
+    let resolvedDeviceName: String
+    let didFallbackToSystemDefault: Bool
+    let requestedMode: MicInputMode
+}
+
 @MainActor
 @Observable
 final class AudioDeviceManager: Sendable {
@@ -33,15 +40,57 @@ final class AudioDeviceManager: Sendable {
 
     // MARK: - Public API
 
-    /// Returns the resolved AudioDeviceID for the current selection.
-    /// nil means "use system default" (caller should not bind a specific device).
-    func resolveDeviceID() -> AudioDeviceID? {
+    /// Resolves a concrete device for record start.
+    /// In specific-device mode, falls back to current system default when unavailable.
+    func resolveRecordingDevice() -> ResolvedRecordingDevice? {
+        let systemDefaultID = Self.querySystemDefaultInputDeviceID()
+
         switch inputMode {
         case .systemDefault:
+            if let systemDefaultID {
+                return ResolvedRecordingDevice(
+                    deviceID: systemDefaultID,
+                    resolvedDeviceName: resolvedName(for: systemDefaultID),
+                    didFallbackToSystemDefault: false,
+                    requestedMode: .systemDefault
+                )
+            }
+            if let first = availableDevices.first {
+                return ResolvedRecordingDevice(
+                    deviceID: first.id,
+                    resolvedDeviceName: first.name,
+                    didFallbackToSystemDefault: false,
+                    requestedMode: .systemDefault
+                )
+            }
             return nil
         case .specificDevice:
-            guard let uid = selectedDeviceUID else { return nil }
-            return availableDevices.first(where: { $0.uid == uid })?.id
+            if let uid = selectedDeviceUID,
+               let selected = availableDevices.first(where: { $0.uid == uid }) {
+                return ResolvedRecordingDevice(
+                    deviceID: selected.id,
+                    resolvedDeviceName: selected.name,
+                    didFallbackToSystemDefault: false,
+                    requestedMode: .specificDevice
+                )
+            }
+            if let systemDefaultID {
+                return ResolvedRecordingDevice(
+                    deviceID: systemDefaultID,
+                    resolvedDeviceName: resolvedName(for: systemDefaultID),
+                    didFallbackToSystemDefault: true,
+                    requestedMode: .specificDevice
+                )
+            }
+            if let first = availableDevices.first {
+                return ResolvedRecordingDevice(
+                    deviceID: first.id,
+                    resolvedDeviceName: first.name,
+                    didFallbackToSystemDefault: true,
+                    requestedMode: .specificDevice
+                )
+            }
+            return nil
         }
     }
 
@@ -185,8 +234,8 @@ final class AudioDeviceManager: Sendable {
 
     // MARK: - System Default Query
 
-    nonisolated static func querySystemDefaultInputName() -> String {
-        var deviceID = AudioObjectID(0)
+    nonisolated static func querySystemDefaultInputDeviceID() -> AudioDeviceID? {
+        var deviceID = AudioDeviceID(0)
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -203,6 +252,13 @@ final class AudioDeviceManager: Sendable {
         )
 
         guard status == noErr, deviceID != kAudioObjectUnknown else {
+            return nil
+        }
+        return deviceID
+    }
+
+    nonisolated static func querySystemDefaultInputName() -> String {
+        guard let deviceID = querySystemDefaultInputDeviceID() else {
             return "System Default"
         }
 
@@ -226,6 +282,13 @@ final class AudioDeviceManager: Sendable {
             return cfName as String
         }
         return "System Default"
+    }
+
+    private func resolvedName(for deviceID: AudioDeviceID) -> String {
+        if let listed = availableDevices.first(where: { $0.id == deviceID }) {
+            return listed.name
+        }
+        return getDeviceName(deviceID) ?? "Unknown Device"
     }
 
     // MARK: - Listeners
