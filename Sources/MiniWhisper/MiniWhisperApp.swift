@@ -16,7 +16,7 @@ struct MiniWhisperApp: App {
             MenuBarView()
                 .environment(appState)
         } label: {
-            MenuBarLabel(state: appState.recorder.state)
+            MenuBarLabel(state: appState.recorder.state, meterLevel: appState.recorder.meterLevel)
         }
         .menuBarExtraStyle(.window)
     }
