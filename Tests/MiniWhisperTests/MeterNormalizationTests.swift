@@ -27,16 +27,15 @@ struct MeterNormalizationTests {
         #expect(db == -60)
     }
 
-    // MARK: - normalizeMeter
+    // MARK: - normalizeMeter (gate=-50, ceiling=-18)
 
     @Test func belowNoiseGateIsZero() {
-        // -50 dBFS is well below the -42 gate
+        #expect(AudioRecorder.normalizeMeter(dbFS: -55) == 0)
         #expect(AudioRecorder.normalizeMeter(dbFS: -50) == 0)
-        #expect(AudioRecorder.normalizeMeter(dbFS: -42) == 0)
     }
 
     @Test func atCeilingIsOne() {
-        #expect(AudioRecorder.normalizeMeter(dbFS: -12) == 1.0)
+        #expect(AudioRecorder.normalizeMeter(dbFS: -18) == 1.0)
     }
 
     @Test func aboveCeilingClampsToOne() {
@@ -44,13 +43,13 @@ struct MeterNormalizationTests {
     }
 
     @Test func midpointIsHalf() {
-        // Midpoint between -42 and -12 is -27
-        let result = AudioRecorder.normalizeMeter(dbFS: -27)
+        // Midpoint between -50 and -18 is -34
+        let result = AudioRecorder.normalizeMeter(dbFS: -34)
         #expect(result == 0.5)
     }
 
     @Test func monotonicIncrease() {
-        let values: [Float] = [-45, -42, -35, -27, -20, -12, -5, 0]
+        let values: [Float] = [-55, -50, -42, -34, -26, -18, -10, 0]
         var previous = -1.0
         for db in values {
             let level = AudioRecorder.normalizeMeter(dbFS: db)
