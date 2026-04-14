@@ -42,6 +42,9 @@ RUBY
 
 echo "==> Committing to homebrew-tap..."
 cd "$TAP_DIR"
+# Pull remote changes first — other projects push to this repo
+# from CI, so the local clone can fall behind.
+git pull --rebase
 git add "Casks/miniwhisper.rb"
 git commit -m "miniwhisper ${MARKETING_VERSION}"
 git push
