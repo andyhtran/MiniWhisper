@@ -87,6 +87,13 @@ struct Recording: Codable, Identifiable, Equatable, Hashable, Sendable {
         status == .cancelled && transcription == nil && hasAudioFile
     }
 
+    /// Completed recordings can be re-transcribed with a different model,
+    /// producing a new history entry. Only available while the WAV still exists
+    /// (before the 15-minute retention cleanup).
+    var canRetranscribeAsNew: Bool {
+        status == .completed && transcription != nil && hasAudioFile
+    }
+
     static var baseDirectory: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return docs.appendingPathComponent("MiniWhisper/recordings")

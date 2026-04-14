@@ -38,7 +38,6 @@ struct MenuBarView: View {
             FooterBarView()
         }
         .frame(width: 340)
-        .background(.ultraThickMaterial)
         .environment(appState)
     }
 }
@@ -470,61 +469,33 @@ private struct FooterBarView: View {
     @State private var showLaunchAtLogin = false
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 0) {
             Spacer()
 
             if appState.transcriptionMode == .custom {
-                Button {
+                FooterButton(icon: "gearshape", label: "Config", color: appState.customProviderSettings.isConfigured ? .accentColor : .orange) {
                     showCustomConfig.toggle()
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                        .foregroundColor(appState.customProviderSettings.isConfigured ? .accentColor : .orange)
-                        .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.plain)
-                .help("Configure Custom Endpoint")
                 .popover(isPresented: $showCustomConfig, arrowEdge: .bottom) {
                     CustomEndpointConfigView()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
 
-            Button {
+            FooterButton(icon: modelPickerIcon, label: "Model", color: appState.transcriptionMode == .english ? .secondary : .accentColor) {
                 showModelPicker.toggle()
-            } label: {
-                Image(systemName: modelPickerIcon)
-                    .font(.system(size: 14))
-                    .foregroundColor(appState.transcriptionMode == .english ? .secondary : .accentColor)
-                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
-            .help("Transcription Model")
             .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
                 ModelPickerView()
             }
 
-            Button {
+            FooterButton(icon: "folder.fill", label: "Files", color: .secondary) {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
-            } label: {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
-                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
-            .help("Show in Finder")
 
-            Button {
+            FooterButton(icon: "arrow.left.arrow.right", label: "Replace", color: appState.replacementSettings.enabled ? .primary : .secondary) {
                 showReplacements.toggle()
-            } label: {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 14))
-                    .foregroundColor(appState.replacementSettings.enabled ? .primary : .secondary)
-                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
-            .help("Text Replacements")
             .popover(isPresented: $showReplacements, arrowEdge: .bottom) {
                 ReplacementsView(
                     settings: Binding(
@@ -535,46 +506,27 @@ private struct FooterBarView: View {
                 )
             }
 
-            Button {
+            FooterButton(icon: "clock.arrow.circlepath", label: "History", color: .secondary) {
                 showHistory.toggle()
-            } label: {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
-                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
-            .help("Recent History")
             .popover(isPresented: $showHistory, arrowEdge: .bottom) {
                 HistoryPopoverView()
             }
 
-            Button {
+            FooterButton(icon: launchManager.isEnabled ? "power.circle.fill" : "power.circle", label: "Login", color: launchManager.isEnabled ? .accentColor : .secondary) {
                 showLaunchAtLogin.toggle()
-            } label: {
-                Image(systemName: launchManager.isEnabled ? "power.circle.fill" : "power.circle")
-                    .font(.system(size: 14))
-                    .foregroundColor(launchManager.isEnabled ? .accentColor : .secondary)
-                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
-            .help("Start on Login")
             .popover(isPresented: $showLaunchAtLogin, arrowEdge: .bottom) {
                 LaunchAtLoginPopoverView()
             }
 
-            Button {
+            FooterButton(icon: "xmark.circle", label: "Quit", color: .red) {
                 NSApplication.shared.terminate(nil)
-            } label: {
-                Image(systemName: "xmark.circle")
-                    .font(.system(size: 14))
-                    .foregroundColor(.red)
-                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
-            .help("Quit MiniWhisper")
+
+            Spacer()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .animation(.easeInOut(duration: 0.15), value: appState.transcriptionMode)
         .onAppear {
@@ -588,6 +540,31 @@ private struct FooterBarView: View {
         case .multilingual: return "globe"
         case .custom: return "server.rack"
         }
+    }
+}
+
+private struct FooterButton: View {
+    let icon: String
+    let label: String
+    var color: Color = .secondary
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundColor(color)
+                    .frame(width: 24, height: 20)
+
+                Text(label)
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -746,24 +723,51 @@ private struct HistoryPopoverRow: View {
                     .lineLimit(2)
                     .foregroundColor(recording.transcription != nil ? .primary : .secondary)
 
-                Text(formatDate(recording.createdAt))
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary.opacity(0.7))
+                HStack(spacing: 4) {
+                    Text(formatDate(recording.createdAt))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary.opacity(0.7))
+
+                    if recording.transcription != nil {
+                        Text("·")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.4))
+                        Text(recording.configuration.voiceModel)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary.opacity(0.5))
+                    }
+                }
             }
 
             Spacer(minLength: 12)
 
             if recording.transcription != nil {
-                if copied {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 15))
-                        .transition(.scale.combined(with: .opacity))
-                } else if isHovering {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    if recording.canRetranscribeAsNew && isHovering && !copied {
+                        Button {
+                            appState.retranscribeAsNew(recording)
+                        } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 12))
+                                .foregroundColor(isRetranscribeDisabled ? .secondary : .accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isRetranscribeDisabled)
+                        .help("Re-transcribe with current model")
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
+
+                    if copied {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 15))
+                            .transition(.scale.combined(with: .opacity))
+                    } else if isHovering {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
                 }
             } else if recording.status == .cancelled {
                 if recording.canRetranscribe {
@@ -804,24 +808,14 @@ private struct HistoryPopoverRow: View {
         recording.canRetranscribe == false || appState.recorder.state.isRecording || appState.recorder.state == .processing
     }
 
+    private var isRetranscribeDisabled: Bool {
+        appState.recorder.state.isRecording || appState.recorder.state == .processing
+    }
+
     private func formatDate(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
-    }
-}
-
-// MARK: - Menu Bar Label
-
-struct MenuBarLabel: View {
-    let state: RecordingState
-    /// Normalized mic level 0...1, only meaningful when state is .recording
-    var meterLevel: Double = 0
-
-    var body: some View {
-        // Always use the same Image(nsImage:) view type so SwiftUI never tears
-        // down and recreates the menu bar item during state transitions.
-        Image(nsImage: MenuBarIconRenderer.render(state: state, meterLevel: meterLevel))
     }
 }
 
