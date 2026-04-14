@@ -548,6 +548,7 @@ private struct FooterButton: View {
     let label: String
     var color: Color = .secondary
     let action: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -562,9 +563,19 @@ private struct FooterButton: View {
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
     }
 }
 
