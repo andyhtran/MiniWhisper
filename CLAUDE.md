@@ -10,3 +10,11 @@ just build        # Debug build
 just package      # Release build + create .app bundle
 just clean        # Remove build artifacts
 ```
+
+## Releasing
+
+After a PR is merged:
+
+1. Bump `MARKETING_VERSION` and `BUILD_NUMBER` in `version.env`
+2. Commit, push to main
+3. Run `just publish` — signs, notarizes, creates GitHub release with tag + assets, and updates the Homebrew tap
