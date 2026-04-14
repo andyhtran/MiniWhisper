@@ -18,6 +18,15 @@ SHA=$(shasum -a 256 "$ZIP_NAME" | cut -d' ' -f1)
 
 echo "==> Updating cask: version=$MARKETING_VERSION sha256=$SHA"
 
+echo "==> Syncing homebrew-tap..."
+cd "$TAP_DIR"
+# Pull before writing — other projects push to this repo from CI,
+# so the local clone can fall behind. Pulling after writing would
+# fail because rebase refuses to run with unstaged changes.
+git pull --rebase
+
+echo "==> Updating cask file..."
+cd "$ROOT"
 mkdir -p "$TAP_DIR/Casks"
 cat > "$CASK_FILE" << RUBY
 cask "miniwhisper" do
@@ -42,9 +51,6 @@ RUBY
 
 echo "==> Committing to homebrew-tap..."
 cd "$TAP_DIR"
-# Pull remote changes first — other projects push to this repo
-# from CI, so the local clone can fall behind.
-git pull --rebase
 git add "Casks/miniwhisper.rb"
 git commit -m "miniwhisper ${MARKETING_VERSION}"
 git push
