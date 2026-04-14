@@ -38,7 +38,6 @@ struct MenuBarView: View {
             FooterBarView()
         }
         .frame(width: 340)
-        .background(VibrancyBackground())
         .environment(appState)
     }
 }
@@ -817,47 +816,6 @@ private struct HistoryPopoverRow: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
-    }
-}
-
-// MARK: - Vibrancy Background
-
-/// Uses NSVisualEffectView to get the native frosted-glass look that
-/// macOS menu bar panels use (same as Tailscale, Network Speed, etc.).
-/// Also configures the hosting window to be non-opaque so the blur
-/// actually shows through.
-private struct VibrancyBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .popover
-        view.blendingMode = .behindWindow
-        view.state = .active
-
-        // Run on the next cycle so the view is in the window hierarchy
-        DispatchQueue.main.async {
-            if let window = view.window {
-                window.isOpaque = false
-                window.backgroundColor = .clear
-            }
-        }
-
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
-}
-
-// MARK: - Menu Bar Label
-
-struct MenuBarLabel: View {
-    let state: RecordingState
-    /// Normalized mic level 0...1, only meaningful when state is .recording
-    var meterLevel: Double = 0
-
-    var body: some View {
-        // Always use the same Image(nsImage:) view type so SwiftUI never tears
-        // down and recreates the menu bar item during state transitions.
-        Image(nsImage: MenuBarIconRenderer.render(state: state, meterLevel: meterLevel))
     }
 }
 
