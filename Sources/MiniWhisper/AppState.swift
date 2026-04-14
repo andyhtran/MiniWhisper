@@ -151,6 +151,26 @@ final class AppState: Sendable {
         }
     }
 
+    /// Re-transcribe a completed recording with the currently active model,
+    /// creating a new history entry. Does not auto-paste — the user copies
+    /// from the new history row manually.
+    func retranscribeAsNew(_ recording: Recording) {
+        guard recorder.state.isIdle else {
+            toast.showError(title: "Busy", message: "Wait for the current recording/transcription to finish.")
+            return
+        }
+        guard recording.canRetranscribeAsNew else {
+            toast.showError(title: "Cannot Re-transcribe", message: "Audio file is no longer available.")
+            return
+        }
+
+        recorder.state = .processing
+
+        Task {
+            await retranscribeAsNewEntry(from: recording)
+        }
+    }
+
     // MARK: - Transcription
 
     private func transcribe(audioURL: URL, recordingId: String, duration: TimeInterval, sampleRate: Double, inputDeviceName: String) async {
@@ -305,6 +325,90 @@ final class AppState: Sendable {
             try recordingStore.saveWithExistingAudio(updatedRecording)
             analyticsStore.record(
                 duration: recording.recording.duration,
+                wordCount: result.text.split(separator: " ").count
+            )
+            recorder.reset()
+        } catch {
+            guard recorder.state == .processing else { return }
+            recorder.reset()
+            toast.showError(title: "Re-transcription Failed", message: error.localizedDescription)
+        }
+    }
+
+    /// Creates a new recording entry by re-transcribing an existing completed
+    /// recording's audio with the currently active model. Hard-links the audio
+    /// file so both entries share the same bytes on disk.
+    private func retranscribeAsNewEntry(from source: Recording) async {
+        let newId = Recording.generateId()
+        let newDir = Recording.baseDirectory.appendingPathComponent(newId)
+        let newAudioURL = newDir.appendingPathComponent("audio.wav")
+
+        do {
+            try FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+            // Hard-link avoids doubling disk usage; if one entry's WAV is
+            // retention-cleaned the other still works independently.
+            try FileManager.default.linkItem(at: source.audioURL, to: newAudioURL)
+        } catch {
+            recorder.reset()
+            toast.showError(title: "Re-transcription Failed", message: "Could not prepare audio: \(error.localizedDescription)")
+            return
+        }
+
+        do {
+            let result: TranscriptionResult
+            switch transcriptionMode {
+            case .english:
+                result = try await parakeet.transcribe(audioURL: newAudioURL)
+            case .multilingual:
+                result = try await whisper.transcribe(audioURL: newAudioURL)
+            case .custom:
+                result = try await customProvider.transcribe(audioURL: newAudioURL, settings: customProviderSettings)
+            }
+
+            guard recorder.state == .processing else { return }
+
+            guard !result.text.isEmpty else {
+                recorder.reset()
+                toast.showError(title: "Empty Transcription", message: "No speech detected in recording.")
+                return
+            }
+
+            let finalText: String
+            if replacementSettings.enabled {
+                let processor = ReplacementProcessor(rules: replacementSettings.enabledRules)
+                finalText = processor.apply(to: result.text)
+            } else {
+                finalText = result.text
+            }
+
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: newAudioURL.path)[.size] as? Int64) ?? 0
+            let newRecording = Recording(
+                id: newId,
+                createdAt: Date(),
+                recording: RecordingInfo(
+                    duration: source.recording.duration,
+                    sampleRate: source.recording.sampleRate,
+                    channels: source.recording.channels,
+                    fileSize: fileSize,
+                    inputDevice: source.recording.inputDevice
+                ),
+                transcription: RecordingTranscription(
+                    text: finalText,
+                    segments: result.segments,
+                    language: result.language,
+                    model: result.model,
+                    transcriptionDuration: result.duration
+                ),
+                configuration: RecordingConfiguration(
+                    voiceModel: result.model,
+                    language: result.language
+                ),
+                status: .completed
+            )
+
+            try recordingStore.saveWithExistingAudio(newRecording)
+            analyticsStore.record(
+                duration: source.recording.duration,
                 wordCount: result.text.split(separator: " ").count
             )
             recorder.reset()

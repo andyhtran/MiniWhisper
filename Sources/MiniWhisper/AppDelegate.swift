@@ -1,14 +1,17 @@
 import AppKit
+import SwiftUI
 import os.log
 
 private let log = Logger(subsystem: Logger.subsystem, category: "AppDelegate")
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private var popover: NSPopover!
+    private var appState: AppState!
     private var hotkeyManager: HotkeyManager?
     private var hotkeyDelegate: HotkeyDelegateImpl?
     private var appNapActivity: NSObjectProtocol?
-
-    @MainActor var appState: AppState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -19,22 +22,70 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             reason: "Audio recording and transcription"
         )
 
-        Task { @MainActor in
-            // SwiftUI sets appDelegate.appState in MiniWhisperApp.init(), which runs
-            // after NSApplicationDelegate adaptor creation but the timing is not
-            // guaranteed relative to applicationDidFinishLaunching. 100ms is enough.
-            try? await Task.sleep(for: .milliseconds(100))
+        let appState = AppState()
+        self.appState = appState
+
+        setupStatusItem()
+        setupPopover()
+        observeIconState()
+
+        Task {
             await setupServices()
         }
     }
 
-    @MainActor
-    private func setupServices() async {
-        guard let appState else {
-            log.error("AppDelegate.setupServices - appState not set")
-            return
-        }
+    // MARK: - Status Item & Popover
 
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem.button {
+            button.image = MenuBarIconRenderer.render(state: .idle, meterLevel: 0)
+            button.action = #selector(togglePopover(_:))
+            button.target = self
+        }
+    }
+
+    private func setupPopover() {
+        popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = VibrancyHostingController(
+            rootView: MenuBarView().environment(appState)
+        )
+    }
+
+    @objc private func togglePopover(_ sender: Any?) {
+        if popover.isShown {
+            popover.performClose(sender)
+        } else if let button = statusItem.button {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+        }
+    }
+
+    // MARK: - Icon Observation
+
+    /// Continuously observes recorder state and meter level to keep the
+    /// status item icon in sync. Re-registers after every change.
+    private func observeIconState() {
+        withObservationTracking {
+            _ = self.appState.recorder.state
+            _ = self.appState.recorder.meterLevel
+        } onChange: {
+            Task { @MainActor [weak self] in
+                self?.updateIcon()
+                self?.observeIconState()
+            }
+        }
+    }
+
+    private func updateIcon() {
+        statusItem.button?.image = MenuBarIconRenderer.render(
+            state: appState.recorder.state,
+            meterLevel: appState.recorder.meterLevel
+        )
+    }
+
+    private func setupServices() async {
         try? await appState.recordingStore.loadAll()
         appState.recordingStore.performRetention()
 
@@ -87,6 +138,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ProcessInfo.processInfo.endActivity(activity)
             appNapActivity = nil
         }
+    }
+}
+
+// MARK: - Vibrancy Hosting
+
+/// Hosting view that opts into vibrancy so the popover content participates
+/// in the system's glass/translucency effect rather than painting an opaque
+/// backing.
+private final class VibrancyHostingView<Content: View>: NSHostingView<Content> {
+    override var allowsVibrancy: Bool { true }
+}
+
+/// View controller wrapper for VibrancyHostingView, since NSPopover requires
+/// a contentViewController (not just a view).
+private final class VibrancyHostingController<Content: View>: NSViewController {
+    private let hostingView: VibrancyHostingView<Content>
+
+    init(rootView: Content) {
+        hostingView = VibrancyHostingView(rootView: rootView)
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        view = hostingView
     }
 }
 
