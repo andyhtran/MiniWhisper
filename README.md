@@ -9,7 +9,9 @@ A minimal macOS menu bar app for voice-to-text with fast English transcription v
 
 [Getting Started](#getting-started) · [Features](#features) · [Build](#build-commands)
 
-<img src=".github/screenshot.png" alt="MiniWhisper screenshot" width="320">
+<p align="center">
+  <img src=".github/screenshot.png" alt="MiniWhisper screenshot" width="520">
+</p>
 
 ## Getting Started
 
