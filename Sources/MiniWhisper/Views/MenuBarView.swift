@@ -489,10 +489,6 @@ private struct FooterBarView: View {
                 ModelPickerView()
             }
 
-            FooterButton(icon: "folder.fill", label: "Files", color: .secondary) {
-                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
-            }
-
             FooterButton(icon: "arrow.left.arrow.right", label: "Replace", color: appState.replacementSettings.enabled ? .primary : .secondary) {
                 showReplacements.toggle()
             }
@@ -513,7 +509,7 @@ private struct FooterBarView: View {
                 HistoryPopoverView()
             }
 
-            FooterButton(icon: launchManager.isEnabled ? "power.circle.fill" : "power.circle", label: "Login", color: launchManager.isEnabled ? .accentColor : .secondary) {
+            FooterButton(icon: launchManager.isEnabled ? "gearshape.fill" : "gearshape", label: "Settings", color: launchManager.isEnabled ? .accentColor : .secondary) {
                 showLaunchAtLogin.toggle()
             }
             .popover(isPresented: $showLaunchAtLogin, arrowEdge: .bottom) {
@@ -583,27 +579,81 @@ private struct LaunchAtLoginPopoverView: View {
     @StateObject private var launchManager = LaunchAtLoginManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Launch at Login")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.5)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Launch at Login")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
 
-            Toggle(
-                "Start MiniWhisper when you log in",
-                isOn: Binding(
-                    get: { launchManager.isEnabled },
-                    set: { launchManager.isEnabled = $0 }
+                Toggle(
+                    "Start MiniWhisper when you log in",
+                    isOn: Binding(
+                        get: { launchManager.isEnabled },
+                        set: { launchManager.isEnabled = $0 }
+                    )
                 )
-            )
-            .toggleStyle(.switch)
-            .font(.system(size: 13))
+                .toggleStyle(.switch)
+                .font(.system(size: 13))
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recordings")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+
+                OpenRecordingsFolderRow()
+            }
         }
         .padding(12)
         .frame(width: 280)
         .onAppear {
             launchManager.refresh()
+        }
+    }
+}
+
+private struct OpenRecordingsFolderRow: View {
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .frame(width: 20)
+
+                Text("Open Recordings Folder")
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovering = hovering
+            }
         }
     }
 }
