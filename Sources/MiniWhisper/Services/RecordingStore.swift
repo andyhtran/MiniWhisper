@@ -96,12 +96,16 @@ final class RecordingStore: Sendable {
             }
         }
 
-        // Clean up old WAV files (keep metadata/transcript)
+        // Clean up old WAV files (keep metadata/transcript). The VAD audit
+        // artifact follows the same 15-minute window as the raw WAV.
         let cutoff = Date().addingTimeInterval(-wavRetentionInterval)
         for recording in recordings {
-            if recording.createdAt < cutoff && recording.hasAudioFile {
-                let audioURL = recording.audioURL
-                try? fileManager.removeItem(at: audioURL)
+            guard recording.createdAt < cutoff else { continue }
+            if recording.hasAudioFile {
+                try? fileManager.removeItem(at: recording.audioURL)
+            }
+            if recording.hasVADAudioFile {
+                try? fileManager.removeItem(at: recording.vadAudioURL)
             }
         }
     }

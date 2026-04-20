@@ -12,6 +12,26 @@ struct RecordingInfo: Codable, Equatable, Hashable, Sendable {
     let channels: Int
     let fileSize: Int64
     let inputDevice: String?
+    /// Whether client-side VAD preprocessing was applied before upload.
+    /// `nil` on recordings created before the VAD feature existed — those
+    /// decode cleanly since it's optional, so no migration is needed.
+    var vadApplied: Bool?
+
+    init(
+        duration: TimeInterval,
+        sampleRate: Double,
+        channels: Int,
+        fileSize: Int64,
+        inputDevice: String?,
+        vadApplied: Bool? = nil
+    ) {
+        self.duration = duration
+        self.sampleRate = sampleRate
+        self.channels = channels
+        self.fileSize = fileSize
+        self.inputDevice = inputDevice
+        self.vadApplied = vadApplied
+    }
 }
 
 struct RecordingTranscription: Codable, Equatable, Hashable, Sendable {
@@ -75,12 +95,23 @@ struct Recording: Codable, Identifiable, Equatable, Hashable, Sendable {
         storageDirectory.appendingPathComponent("audio.wav")
     }
 
+    /// Optional audit artifact: the VAD-preprocessed WAV actually sent to the
+    /// transcription provider. Present only when `RecordingInfo.vadApplied`
+    /// is true and the 15-minute retention window hasn't elapsed.
+    var vadAudioURL: URL {
+        storageDirectory.appendingPathComponent("audio-vad.wav")
+    }
+
     var storageDirectory: URL {
         Self.baseDirectory.appendingPathComponent(id)
     }
 
     var hasAudioFile: Bool {
         FileManager.default.fileExists(atPath: audioURL.path)
+    }
+
+    var hasVADAudioFile: Bool {
+        FileManager.default.fileExists(atPath: vadAudioURL.path)
     }
 
     var canRetranscribe: Bool {

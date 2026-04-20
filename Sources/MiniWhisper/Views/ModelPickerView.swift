@@ -15,12 +15,12 @@ struct ModelPickerView: View {
             VStack(spacing: 2) {
                 ModelRow(
                     icon: "bolt.fill",
-                    title: "English Only",
-                    subtitle: "Fast · English",
+                    title: "Default",
+                    subtitle: "English + 20 European languages",
                     badge: nil,
-                    isSelected: appState.transcriptionMode == .english
+                    isSelected: appState.transcriptionMode == .default
                 ) {
-                    appState.switchTranscriptionMode(to: .english)
+                    appState.switchTranscriptionMode(to: .default)
                 }
 
                 ModelRow(
