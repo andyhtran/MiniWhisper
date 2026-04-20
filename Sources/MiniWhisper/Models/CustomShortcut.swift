@@ -215,7 +215,7 @@ final class CustomShortcutStorage {
 
     static func defaultShortcuts() -> [CustomShortcutName: CustomShortcut] {
         [
-            .toggleRecording: CustomShortcut(keyCode: UInt16(kVK_ANSI_R), option: true, shift: true),
+            .toggleRecording: CustomShortcut(keyCode: UInt16(kVK_ANSI_W), option: true),
             .cancelRecording: CustomShortcut(keyCode: UInt16(kVK_Escape)),  // Escape
         ]
     }

@@ -1,6 +1,6 @@
+import AppKit
 import Foundation
 import Observation
-import AppKit
 import UserNotifications
 
 @Observable
@@ -34,7 +34,7 @@ final class AppState: Sendable {
 
     var isModelLoaded: Bool {
         switch transcriptionMode {
-        case .english: return parakeet.isInitialized
+        case .default: return parakeet.isInitialized
         case .multilingual: return whisper.isInitialized
         case .custom: return customProviderSettings.isConfigured
         }
@@ -55,13 +55,29 @@ final class AppState: Sendable {
         }
     }
 
+    // MARK: - Post-processing
+
+    /// Applies replacements + user-selected formatting rules to raw model
+    /// output. Single entry point so every transcription path (new recording,
+    /// re-transcribe, re-transcribe-as-new) produces byte-identical results.
+    private func applyPostProcessing(to text: String) -> String {
+        let rules = replacementSettings.enabled ? replacementSettings.enabledRules : []
+        let options = TranscriptionFormatter.Options(
+            replacementRules: rules,
+            capitalization: FormattingSettings.capitalization,
+            autoParagraph: FormattingSettings.autoParagraph,
+            dropTrailingPunctuation: FormattingSettings.dropTrailingPunctuation
+        )
+        return TranscriptionFormatter.format(text, options: options)
+    }
+
     // MARK: - Initialization
 
     func preloadModel() {
         Task {
             do {
                 switch transcriptionMode {
-                case .english:
+                case .default:
                     try await parakeet.initialize()
                 case .multilingual:
                     guard whisper.modelExists else { return }
@@ -79,7 +95,8 @@ final class AppState: Sendable {
         guard mode != transcriptionMode else { return }
 
         if recorder.state.isRecording {
-            toast.showError(title: "Cannot Switch", message: "Stop recording before switching models.")
+            toast.showError(
+                title: "Cannot Switch", message: "Stop recording before switching models.")
             return
         }
 
@@ -88,7 +105,7 @@ final class AppState: Sendable {
         }
 
         switch transcriptionMode {
-        case .english: parakeet.unload()
+        case .default: parakeet.unload()
         case .multilingual: whisper.unload()
         case .custom: break
         }
@@ -99,7 +116,7 @@ final class AppState: Sendable {
         Task {
             do {
                 switch mode {
-                case .english:
+                case .default:
                     try await parakeet.initialize()
                 case .multilingual:
                     try await whisper.initialize()
@@ -136,11 +153,13 @@ final class AppState: Sendable {
 
     func retranscribe(_ recording: Recording) {
         guard recorder.state.isIdle else {
-            toast.showError(title: "Busy", message: "Wait for the current recording/transcription to finish.")
+            toast.showError(
+                title: "Busy", message: "Wait for the current recording/transcription to finish.")
             return
         }
         guard recording.canRetranscribe else {
-            toast.showError(title: "Cannot Re-transcribe", message: "Audio file is no longer available.")
+            toast.showError(
+                title: "Cannot Re-transcribe", message: "Audio file is no longer available.")
             return
         }
 
@@ -156,11 +175,13 @@ final class AppState: Sendable {
     /// from the new history row manually.
     func retranscribeAsNew(_ recording: Recording) {
         guard recorder.state.isIdle else {
-            toast.showError(title: "Busy", message: "Wait for the current recording/transcription to finish.")
+            toast.showError(
+                title: "Busy", message: "Wait for the current recording/transcription to finish.")
             return
         }
         guard recording.canRetranscribeAsNew else {
-            toast.showError(title: "Cannot Re-transcribe", message: "Audio file is no longer available.")
+            toast.showError(
+                title: "Cannot Re-transcribe", message: "Audio file is no longer available.")
             return
         }
 
@@ -173,16 +194,50 @@ final class AppState: Sendable {
 
     // MARK: - Transcription
 
-    private func transcribe(audioURL: URL, recordingId: String, duration: TimeInterval, sampleRate: Double, inputDeviceName: String) async {
+    /// Single choke point for VAD preprocessing: all three transcription entry
+    /// points (fresh recording, re-transcribe cancelled, re-transcribe as new)
+    /// funnel upload audio through here, and any failure inside the
+    /// preprocessor falls back to the original WAV.
+    ///
+    /// Only applies to Custom (remote) mode — local models run on-device so
+    /// trimming silence has no upload-cost benefit, and whisper.cpp has its
+    /// own VAD pass built in.
+    private func preprocessForUpload(
+        audioURL: URL,
+        duration: TimeInterval,
+        storageDir: URL
+    ) async -> (url: URL, applied: Bool) {
+        guard transcriptionMode == .custom else {
+            return (audioURL, false)
+        }
+        return await VADPreprocessor.shared.preprocess(
+            audioURL: audioURL,
+            durationSeconds: duration,
+            recordingStorageDir: storageDir
+        )
+    }
+
+    private func transcribe(
+        audioURL: URL, recordingId: String, duration: TimeInterval, sampleRate: Double,
+        inputDeviceName: String
+    ) async {
+        let storageDir = audioURL.deletingLastPathComponent()
+        let (uploadURL, vadApplied) = await preprocessForUpload(
+            audioURL: audioURL,
+            duration: duration,
+            storageDir: storageDir
+        )
+
         do {
             let result: TranscriptionResult
             switch transcriptionMode {
-            case .english:
-                result = try await parakeet.transcribe(audioURL: audioURL)
+            case .default:
+                result = try await parakeet.transcribe(audioURL: uploadURL)
             case .multilingual:
-                result = try await whisper.transcribe(audioURL: audioURL)
+                result = try await whisper.transcribe(audioURL: uploadURL)
             case .custom:
-                result = try await customProvider.transcribe(audioURL: audioURL, settings: customProviderSettings)
+                result = try await customProvider.transcribe(
+                    audioURL: uploadURL, settings: customProviderSettings)
             }
 
             // Guard against stale callback: if the user rapid-tapped and started a new
@@ -192,21 +247,18 @@ final class AppState: Sendable {
 
             guard !result.text.isEmpty else {
                 recorder.reset()
-                toast.showError(title: "Empty Transcription", message: "No speech detected in recording.")
+                toast.showError(
+                    title: "Empty Transcription", message: "No speech detected in recording.")
                 return
             }
 
-            let finalText: String
-            if replacementSettings.enabled {
-                let processor = ReplacementProcessor(rules: replacementSettings.enabledRules)
-                finalText = processor.apply(to: result.text)
-            } else {
-                finalText = result.text
-            }
+            let finalText = applyPostProcessing(to: result.text)
 
             pasteboard.copyAndPaste(finalText)
 
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64) ?? 0
+            let fileSize =
+                (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64)
+                ?? 0
 
             let recording = Recording(
                 id: recordingId,
@@ -216,7 +268,8 @@ final class AppState: Sendable {
                     sampleRate: sampleRate,
                     channels: 1,
                     fileSize: fileSize,
-                    inputDevice: inputDeviceName
+                    inputDevice: inputDeviceName,
+                    vadApplied: vadApplied
                 ),
                 transcription: RecordingTranscription(
                     text: finalText,
@@ -253,7 +306,8 @@ final class AppState: Sendable {
                     sampleRate: sampleRate,
                     channels: 1,
                     fileSize: 0,
-                    inputDevice: inputDeviceName
+                    inputDevice: inputDeviceName,
+                    vadApplied: vadApplied
                 ),
                 transcription: nil,
                 configuration: RecordingConfiguration(
@@ -268,36 +322,43 @@ final class AppState: Sendable {
     }
 
     private func retranscribeCancelledRecording(_ recording: Recording) async {
+        // Re-run VAD on the current raw WAV so the global toggle is the
+        // source of truth. Overwrites any stale audio-vad.wav from the prior
+        // run. No-op in the local modes — see `preprocessForUpload`.
+        let (uploadURL, vadApplied) = await preprocessForUpload(
+            audioURL: recording.audioURL,
+            duration: recording.recording.duration,
+            storageDir: recording.storageDirectory
+        )
+
         do {
             let result: TranscriptionResult
             switch transcriptionMode {
-            case .english:
-                result = try await parakeet.transcribe(audioURL: recording.audioURL)
+            case .default:
+                result = try await parakeet.transcribe(audioURL: uploadURL)
             case .multilingual:
-                result = try await whisper.transcribe(audioURL: recording.audioURL)
+                result = try await whisper.transcribe(audioURL: uploadURL)
             case .custom:
-                result = try await customProvider.transcribe(audioURL: recording.audioURL, settings: customProviderSettings)
+                result = try await customProvider.transcribe(
+                    audioURL: uploadURL, settings: customProviderSettings)
             }
 
             guard recorder.state == .processing else { return }
 
             guard !result.text.isEmpty else {
                 recorder.reset()
-                toast.showError(title: "Empty Transcription", message: "No speech detected in recording.")
+                toast.showError(
+                    title: "Empty Transcription", message: "No speech detected in recording.")
                 return
             }
 
-            let finalText: String
-            if replacementSettings.enabled {
-                let processor = ReplacementProcessor(rules: replacementSettings.enabledRules)
-                finalText = processor.apply(to: result.text)
-            } else {
-                finalText = result.text
-            }
+            let finalText = applyPostProcessing(to: result.text)
 
             pasteboard.copyAndPaste(finalText)
 
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: recording.audioURL.path)[.size] as? Int64) ?? 0
+            let fileSize =
+                (try? FileManager.default.attributesOfItem(atPath: recording.audioURL.path)[.size]
+                    as? Int64) ?? 0
             let updatedRecording = Recording(
                 id: recording.id,
                 createdAt: recording.createdAt,
@@ -306,7 +367,8 @@ final class AppState: Sendable {
                     sampleRate: recording.recording.sampleRate,
                     channels: recording.recording.channels,
                     fileSize: fileSize,
-                    inputDevice: recording.recording.inputDevice
+                    inputDevice: recording.recording.inputDevice,
+                    vadApplied: vadApplied
                 ),
                 transcription: RecordingTranscription(
                     text: finalText,
@@ -350,38 +412,44 @@ final class AppState: Sendable {
             try FileManager.default.linkItem(at: source.audioURL, to: newAudioURL)
         } catch {
             recorder.reset()
-            toast.showError(title: "Re-transcription Failed", message: "Could not prepare audio: \(error.localizedDescription)")
+            toast.showError(
+                title: "Re-transcription Failed",
+                message: "Could not prepare audio: \(error.localizedDescription)")
             return
         }
+
+        let (uploadURL, vadApplied) = await preprocessForUpload(
+            audioURL: newAudioURL,
+            duration: source.recording.duration,
+            storageDir: newDir
+        )
 
         do {
             let result: TranscriptionResult
             switch transcriptionMode {
-            case .english:
-                result = try await parakeet.transcribe(audioURL: newAudioURL)
+            case .default:
+                result = try await parakeet.transcribe(audioURL: uploadURL)
             case .multilingual:
-                result = try await whisper.transcribe(audioURL: newAudioURL)
+                result = try await whisper.transcribe(audioURL: uploadURL)
             case .custom:
-                result = try await customProvider.transcribe(audioURL: newAudioURL, settings: customProviderSettings)
+                result = try await customProvider.transcribe(
+                    audioURL: uploadURL, settings: customProviderSettings)
             }
 
             guard recorder.state == .processing else { return }
 
             guard !result.text.isEmpty else {
                 recorder.reset()
-                toast.showError(title: "Empty Transcription", message: "No speech detected in recording.")
+                toast.showError(
+                    title: "Empty Transcription", message: "No speech detected in recording.")
                 return
             }
 
-            let finalText: String
-            if replacementSettings.enabled {
-                let processor = ReplacementProcessor(rules: replacementSettings.enabledRules)
-                finalText = processor.apply(to: result.text)
-            } else {
-                finalText = result.text
-            }
+            let finalText = applyPostProcessing(to: result.text)
 
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: newAudioURL.path)[.size] as? Int64) ?? 0
+            let fileSize =
+                (try? FileManager.default.attributesOfItem(atPath: newAudioURL.path)[.size]
+                    as? Int64) ?? 0
             let newRecording = Recording(
                 id: newId,
                 createdAt: Date(),
@@ -390,7 +458,8 @@ final class AppState: Sendable {
                     sampleRate: source.recording.sampleRate,
                     channels: source.recording.channels,
                     fileSize: fileSize,
-                    inputDevice: source.recording.inputDevice
+                    inputDevice: source.recording.inputDevice,
+                    vadApplied: vadApplied
                 ),
                 transcription: RecordingTranscription(
                     text: finalText,
@@ -422,7 +491,8 @@ final class AppState: Sendable {
     // MARK: - Duration Monitoring
 
     private func startDurationChecks() {
-        durationCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        durationCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) {
+            [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.checkDuration()
             }
@@ -440,16 +510,18 @@ final class AppState: Sendable {
         if duration >= warningDuration && !warningShown {
             warningShown = true
             let remaining = Int(maxRecordingDuration - duration)
-            toast.show(ToastMessage(
-                type: .warning,
-                title: "Recording Limit",
-                message: "Recording will stop in \(remaining / 60) min \(remaining % 60) sec"
-            ))
+            toast.show(
+                ToastMessage(
+                    type: .warning,
+                    title: "Recording Limit",
+                    message: "Recording will stop in \(remaining / 60) min \(remaining % 60) sec"
+                ))
 
             let content = UNMutableNotificationContent()
             content.title = "Recording Limit"
             content.body = "Recording will automatically stop in ~2 minutes"
-            let request = UNNotificationRequest(identifier: "recording-warning", content: content, trigger: nil)
+            let request = UNNotificationRequest(
+                identifier: "recording-warning", content: content, trigger: nil)
             Task {
                 try? await UNUserNotificationCenter.current().add(request)
             }
@@ -468,9 +540,13 @@ final class AppState: Sendable {
         guard recorder.state.isIdle else { return }
         guard isModelLoaded else {
             if transcriptionMode == .custom {
-                toast.showError(title: "Not Configured", message: "Configure your custom endpoint before recording.")
+                toast.showError(
+                    title: "Not Configured",
+                    message: "Configure your custom endpoint before recording.")
             } else {
-                toast.showError(title: "Model Not Ready", message: "Please wait for the model to finish loading.")
+                toast.showError(
+                    title: "Model Not Ready",
+                    message: "Please wait for the model to finish loading.")
             }
             return
         }
@@ -486,12 +562,15 @@ final class AppState: Sendable {
             return
         }
 
-        if resolvedDevice.requestedMode == .specificDevice && resolvedDevice.didFallbackToSystemDefault {
-            toast.show(ToastMessage(
-                type: .warning,
-                title: "Mic Unavailable",
-                message: "Selected mic not found, using system default"
-            ))
+        if resolvedDevice.requestedMode == .specificDevice
+            && resolvedDevice.didFallbackToSystemDefault
+        {
+            toast.show(
+                ToastMessage(
+                    type: .warning,
+                    title: "Mic Unavailable",
+                    message: "Selected mic not found, using system default"
+                ))
         }
 
         let dir = Recording.baseDirectory.appendingPathComponent(recordingId)
@@ -569,7 +648,8 @@ final class AppState: Sendable {
         }
         recorder.reset()
 
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64) ?? 0
+        let fileSize =
+            (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64) ?? 0
         let recording = Recording(
             id: recordingId,
             createdAt: Date(),
