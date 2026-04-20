@@ -465,28 +465,18 @@ private struct FooterBarView: View {
     @State private var showHistory = false
     @State private var showReplacements = false
     @State private var showModelPicker = false
-    @State private var showCustomConfig = false
-    @State private var showLaunchAtLogin = false
+    @State private var showFormat = false
+    @State private var showSettings = false
 
     var body: some View {
         HStack(spacing: 0) {
             Spacer()
 
-            if appState.transcriptionMode == .custom {
-                FooterButton(icon: "gearshape", label: "Config", color: appState.customProviderSettings.isConfigured ? .accentColor : .orange) {
-                    showCustomConfig.toggle()
-                }
-                .popover(isPresented: $showCustomConfig, arrowEdge: .bottom) {
-                    CustomEndpointConfigView()
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
-
-            FooterButton(icon: modelPickerIcon, label: "Model", color: appState.transcriptionMode == .english ? .secondary : .accentColor) {
+            FooterButton(icon: modelPickerIcon, label: "Model", color: appState.transcriptionMode == .default ? .secondary : .accentColor) {
                 showModelPicker.toggle()
             }
             .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
-                ModelPickerView()
+                ModelPickerView().resignsResponderOnClose()
             }
 
             FooterButton(icon: "arrow.left.arrow.right", label: "Replace", color: appState.replacementSettings.enabled ? .primary : .secondary) {
@@ -500,20 +490,28 @@ private struct FooterBarView: View {
                     ),
                     onSave: { appState.replacementSettings.save() }
                 )
+                .resignsResponderOnClose()
+            }
+
+            FooterButton(icon: "textformat", label: "Format", color: .secondary) {
+                showFormat.toggle()
+            }
+            .popover(isPresented: $showFormat, arrowEdge: .bottom) {
+                FormatPopoverView().resignsResponderOnClose()
             }
 
             FooterButton(icon: "clock.arrow.circlepath", label: "History", color: .secondary) {
                 showHistory.toggle()
             }
             .popover(isPresented: $showHistory, arrowEdge: .bottom) {
-                HistoryPopoverView()
+                HistoryPopoverView().resignsResponderOnClose()
             }
 
-            FooterButton(icon: launchManager.isEnabled ? "gearshape.fill" : "gearshape", label: "Settings", color: launchManager.isEnabled ? .accentColor : .secondary) {
-                showLaunchAtLogin.toggle()
+            FooterButton(icon: settingsIcon, label: "Settings", color: settingsColor) {
+                showSettings.toggle()
             }
-            .popover(isPresented: $showLaunchAtLogin, arrowEdge: .bottom) {
-                LaunchAtLoginPopoverView()
+            .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+                SettingsPopoverView().resignsResponderOnClose()
             }
 
             FooterButton(icon: "xmark.circle", label: "Quit", color: .red) {
@@ -532,10 +530,26 @@ private struct FooterBarView: View {
 
     private var modelPickerIcon: String {
         switch appState.transcriptionMode {
-        case .english: return "waveform"
+        case .default: return "waveform"
         case .multilingual: return "globe"
         case .custom: return "server.rack"
         }
+    }
+
+    // Settings gear turns orange when custom mode is selected but the endpoint
+    // isn't configured yet — the visual breadcrumb that used to live on the
+    // standalone Config footer button before it was folded into Settings.
+    private var needsCustomConfigAttention: Bool {
+        appState.transcriptionMode == .custom && !appState.customProviderSettings.isConfigured
+    }
+
+    private var settingsIcon: String {
+        launchManager.isEnabled ? "gearshape.fill" : "gearshape"
+    }
+
+    private var settingsColor: Color {
+        if needsCustomConfigAttention { return .orange }
+        return launchManager.isEnabled ? .accentColor : .secondary
     }
 }
 
@@ -575,10 +589,16 @@ private struct FooterButton: View {
     }
 }
 
-private struct LaunchAtLoginPopoverView: View {
+private struct SettingsPopoverView: View {
+    @Environment(AppState.self) private var appState
     @StateObject private var launchManager = LaunchAtLoginManager.shared
+    // Local mirror of the UserDefaults-backed VAD toggle so SwiftUI re-renders
+    // when flipped. VADSettings isn't @Observable — it's a plain wrapper.
+    @State private var vadEnabled = VADSettings.enabled
 
     var body: some View {
+        @Bindable var appState = appState
+
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Launch at Login")
@@ -587,15 +607,82 @@ private struct LaunchAtLoginPopoverView: View {
                     .textCase(.uppercase)
                     .tracking(0.5)
 
-                Toggle(
-                    "Start MiniWhisper when you log in",
-                    isOn: Binding(
-                        get: { launchManager.isEnabled },
-                        set: { launchManager.isEnabled = $0 }
+                HStack {
+                    Text("Start MiniWhisper when you log in")
+                        .font(.system(size: 13))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { launchManager.isEnabled },
+                            set: { launchManager.isEnabled = $0 }
+                        )
                     )
-                )
-                .toggleStyle(.switch)
-                .font(.system(size: 13))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                }
+            }
+
+            // Custom Endpoint only applies to the Custom transcription mode.
+            // Local models (Parakeet / Whisper) run on-device and don't
+            // need URL/key/model config or silence trimming, so the whole
+            // section is hidden for them.
+            if appState.transcriptionMode == .custom {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Custom Endpoint")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Endpoint URL")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                        TextField("https://api.example.com/v1/audio/transcriptions", text: $appState.customProviderSettings.endpointURL)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("API Key (optional)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                        SecureField("sk-...", text: $appState.customProviderSettings.apiKey)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Model Name")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                        TextField("whisper-large-v3", text: $appState.customProviderSettings.modelName)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                    }
+
+                    HStack {
+                        Text("Trim long silences")
+                            .font(.system(size: 13))
+                        Spacer()
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { vadEnabled },
+                                set: {
+                                    vadEnabled = $0
+                                    VADSettings.enabled = $0
+                                }
+                            )
+                        )
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                    }
+                }
             }
 
             Divider()
@@ -611,9 +698,97 @@ private struct LaunchAtLoginPopoverView: View {
             }
         }
         .padding(12)
-        .frame(width: 280)
+        .frame(width: 300)
+        .onChange(of: appState.customProviderSettings) {
+            appState.customProviderSettings.save()
+        }
         .onAppear {
             launchManager.refresh()
+            vadEnabled = VADSettings.enabled
+        }
+    }
+}
+
+private struct FormatPopoverView: View {
+    // Local mirror so SwiftUI re-renders when the user toggles values.
+    // FormattingSettings is a UserDefaults wrapper, not @Observable.
+    @State private var capitalization = FormattingSettings.capitalization
+    @State private var autoParagraph = FormattingSettings.autoParagraph
+    @State private var dropTrailingPunctuation = FormattingSettings.dropTrailingPunctuation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Formatting")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            HStack {
+                Text("Capitalization")
+                    .font(.system(size: 13))
+                Spacer()
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { capitalization },
+                        set: {
+                            capitalization = $0
+                            FormattingSettings.capitalization = $0
+                        }
+                    )
+                ) {
+                    ForEach(CapitalizationStyle.allCases, id: \.self) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            HStack {
+                Text("Auto paragraphs")
+                    .font(.system(size: 13))
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { autoParagraph },
+                        set: {
+                            autoParagraph = $0
+                            FormattingSettings.autoParagraph = $0
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
+
+            HStack {
+                Text("Drop trailing punctuation")
+                    .font(.system(size: 13))
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { dropTrailingPunctuation },
+                        set: {
+                            dropTrailingPunctuation = $0
+                            FormattingSettings.dropTrailingPunctuation = $0
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
+        }
+        .padding(12)
+        .frame(width: 280)
+        .onAppear {
+            capitalization = FormattingSettings.capitalization
+            autoParagraph = FormattingSettings.autoParagraph
+            dropTrailingPunctuation = FormattingSettings.dropTrailingPunctuation
         }
     }
 }
@@ -654,58 +829,6 @@ private struct OpenRecordingsFolderRow: View {
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovering = hovering
             }
-        }
-    }
-}
-
-// MARK: - Custom Endpoint Config
-
-private struct CustomEndpointConfigView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        @Bindable var appState = appState
-
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Custom Endpoint")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Endpoint URL")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                    TextField("https://api.example.com/v1/audio/transcriptions", text: $appState.customProviderSettings.endpointURL)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("API Key (optional)")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                    SecureField("sk-...", text: $appState.customProviderSettings.apiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Model Name")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                    TextField("whisper-large-v3", text: $appState.customProviderSettings.modelName)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                }
-            }
-        }
-        .padding(12)
-        .frame(width: 300)
-        .onChange(of: appState.customProviderSettings) {
-            appState.customProviderSettings.save()
         }
     }
 }
@@ -938,5 +1061,37 @@ enum MenuBarIconRenderer {
 
         image.isTemplate = false
         return image
+    }
+}
+
+// MARK: - Popover Responder Cleanup
+
+// SwiftUI's `.popover` tears down its hosting window while a TextField inside
+// can still be first responder. The orphaned NSTextView then lives on,
+// registered as responder for a now-null window, and the next popover that
+// tries to set up first responder crashes in -[NSWindow _newFirstResponderAfterResigning].
+//
+// PopoverResponderResetView sits invisibly in the popover content and watches
+// for `viewWillMove(toWindow: nil)` — the last point where the popover's
+// window is still live. At that moment we tell the window to clear its first
+// responder cleanly, which gives the TextField a chance to resignFirstResponder
+// while its window still exists.
+private struct PopoverResponderReset: NSViewRepresentable {
+    final class ResetView: NSView {
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil, let current = self.window {
+                current.makeFirstResponder(nil)
+            }
+            super.viewWillMove(toWindow: newWindow)
+        }
+    }
+
+    func makeNSView(context: Context) -> NSView { ResetView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private extension View {
+    func resignsResponderOnClose() -> some View {
+        background(PopoverResponderReset().frame(width: 0, height: 0).allowsHitTesting(false))
     }
 }

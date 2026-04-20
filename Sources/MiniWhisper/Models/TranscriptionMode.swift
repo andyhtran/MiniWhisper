@@ -1,13 +1,17 @@
 import Foundation
 
 enum TranscriptionMode: String, Codable, Sendable {
-    case english
+    // Raw value kept as "english" to preserve existing UserDefaults entries
+    // from earlier versions. The case name is intentionally generic so the
+    // underlying model can be swapped (currently Parakeet) without another
+    // rename cascade.
+    case `default` = "english"
     case multilingual
     case custom
 
     var modelDisplayName: String {
         switch self {
-        case .english: return "Parakeet"
+        case .default: return "Parakeet"
         case .multilingual: return "Whisper"
         case .custom: return "Custom"
         }
@@ -20,7 +24,7 @@ struct TranscriptionModeStorage: Sendable {
     static func load() -> TranscriptionMode {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
               let mode = TranscriptionMode(rawValue: raw) else {
-            return .english
+            return .default
         }
         return mode
     }
