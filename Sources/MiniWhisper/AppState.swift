@@ -82,7 +82,8 @@ final class AppState: Sendable {
             replacementRules: rules,
             capitalization: FormattingSettings.capitalization,
             autoParagraph: FormattingSettings.autoParagraph,
-            dropTrailingPunctuation: FormattingSettings.dropTrailingPunctuation
+            dropTrailingPunctuation: FormattingSettings.dropTrailingPunctuation,
+            spokenSymbolsEnabled: SpokenSymbolsSettings.enabled
         )
         return TranscriptionFormatter.format(text, options: options)
     }

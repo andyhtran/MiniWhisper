@@ -112,7 +112,9 @@ private struct RecordingHeaderView: View {
         switch appState.recorder.state {
         case .idle:
             if appState.isModelDownloading { return "Downloading Model..." }
-            if appState.transcriptionMode == .custom && !appState.customProviderSettings.isConfigured {
+            if appState.transcriptionMode == .custom
+                && !appState.customProviderSettings.isConfigured
+            {
                 return "Configure Endpoint"
             }
             return appState.isModelLoaded ? "Ready" : "Loading Model..."
@@ -190,7 +192,8 @@ private struct MicrophoneSection: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
+                        .fill(
+                            isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
                 )
                 .contentShape(Rectangle())
             }
@@ -312,14 +315,15 @@ private struct ShortcutSection: View {
 
             if isEditing {
                 HStack(spacing: 8) {
-                    ShortcutRecorderView(shortcut: Binding(
-                        get: { CustomShortcutStorage.get(.toggleRecording) },
-                        set: { newShortcut in
-                            CustomShortcutStorage.set(newShortcut, for: .toggleRecording)
-                            appState.reloadShortcuts()
-                            isEditing = false
-                        }
-                    ))
+                    ShortcutRecorderView(
+                        shortcut: Binding(
+                            get: { CustomShortcutStorage.get(.toggleRecording) },
+                            set: { newShortcut in
+                                CustomShortcutStorage.set(newShortcut, for: .toggleRecording)
+                                appState.reloadShortcuts()
+                                isEditing = false
+                            }
+                        ))
 
                     Spacer()
 
@@ -384,7 +388,9 @@ private struct PermissionsBanner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Permissions Needed", icon: "exclamationmark.shield.fill", iconColor: .orange)
+            SectionHeader(
+                title: "Permissions Needed", icon: "exclamationmark.shield.fill", iconColor: .orange
+            )
 
             VStack(spacing: 4) {
                 if !appState.permissions.accessibilityGranted {
@@ -472,14 +478,20 @@ private struct FooterBarView: View {
         HStack(spacing: 0) {
             Spacer()
 
-            FooterButton(icon: modelPickerIcon, label: "Model", color: appState.transcriptionMode == .default ? .secondary : .accentColor) {
+            FooterButton(
+                icon: modelPickerIcon, label: "Model",
+                color: appState.transcriptionMode == .default ? .secondary : .accentColor
+            ) {
                 showModelPicker.toggle()
             }
             .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
                 ModelPickerView().resignsResponderOnClose()
             }
 
-            FooterButton(icon: "arrow.left.arrow.right", label: "Replace", color: appState.replacementSettings.enabled ? .primary : .secondary) {
+            FooterButton(
+                icon: "arrow.left.arrow.right", label: "Replace",
+                color: appState.replacementSettings.enabled ? .primary : .secondary
+            ) {
                 showReplacements.toggle()
             }
             .popover(isPresented: $showReplacements, arrowEdge: .bottom) {
@@ -595,6 +607,7 @@ private struct SettingsPopoverView: View {
     // Local mirror of the UserDefaults-backed VAD toggle so SwiftUI re-renders
     // when flipped. VADSettings isn't @Observable — it's a plain wrapper.
     @State private var vadEnabled = VADSettings.enabled
+    @State private var spokenSymbolsEnabled = SpokenSymbolsSettings.enabled
 
     var body: some View {
         @Bindable var appState = appState
@@ -624,6 +637,35 @@ private struct SettingsPopoverView: View {
                 }
             }
 
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Spoken Symbols")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+
+                HStack {
+                    Text("Convert common phrases into symbols")
+                        .font(.system(size: 13))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { spokenSymbolsEnabled },
+                            set: {
+                                spokenSymbolsEnabled = $0
+                                SpokenSymbolsSettings.enabled = $0
+                            }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                }
+            }
+
             // Custom Endpoint only applies to the Custom transcription mode.
             // Local models (Parakeet / Whisper) run on-device and don't
             // need URL/key/model config or silence trimming, so the whole
@@ -642,9 +684,12 @@ private struct SettingsPopoverView: View {
                         Text("Endpoint URL")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
-                        TextField("https://api.example.com/v1/audio/transcriptions", text: $appState.customProviderSettings.endpointURL)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
+                        TextField(
+                            "https://api.example.com/v1/audio/transcriptions",
+                            text: $appState.customProviderSettings.endpointURL
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -660,9 +705,11 @@ private struct SettingsPopoverView: View {
                         Text("Model Name")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
-                        TextField("whisper-large-v3", text: $appState.customProviderSettings.modelName)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
+                        TextField(
+                            "whisper-large-v3", text: $appState.customProviderSettings.modelName
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
                     }
 
                     HStack {
@@ -705,6 +752,7 @@ private struct SettingsPopoverView: View {
         .onAppear {
             launchManager.refresh()
             vadEnabled = VADSettings.enabled
+            spokenSymbolsEnabled = SpokenSymbolsSettings.enabled
         }
     }
 }
@@ -798,7 +846,9 @@ private struct OpenRecordingsFolderRow: View {
 
     var body: some View {
         Button {
-            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
+            NSWorkspace.shared.selectFile(
+                nil,
+                inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "folder.fill")
@@ -989,7 +1039,8 @@ private struct HistoryPopoverRow: View {
     }
 
     private var isReTranscribeDisabled: Bool {
-        recording.canRetranscribe == false || appState.recorder.state.isRecording || appState.recorder.state == .processing
+        recording.canRetranscribe == false || appState.recorder.state.isRecording
+            || appState.recorder.state == .processing
     }
 
     private var isRetranscribeDisabled: Bool {
@@ -1052,7 +1103,8 @@ enum MenuBarIconRenderer {
                 let x = CGFloat(i) * (barWidth + barSpacing)
                 let y = (maxHeight - barHeight) / 2.0
                 let barRect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
-                let path = NSBezierPath(roundedRect: barRect, xRadius: barWidth / 2, yRadius: barWidth / 2)
+                let path = NSBezierPath(
+                    roundedRect: barRect, xRadius: barWidth / 2, yRadius: barWidth / 2)
                 NSColor.systemRed.setFill()
                 path.fill()
             }
@@ -1090,8 +1142,8 @@ private struct PopoverResponderReset: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-private extension View {
-    func resignsResponderOnClose() -> some View {
+extension View {
+    fileprivate func resignsResponderOnClose() -> some View {
         background(PopoverResponderReset().frame(width: 0, height: 0).allowsHitTesting(false))
     }
 }
