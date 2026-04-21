@@ -53,6 +53,22 @@ final class AppState: Sendable {
             toast.showError(title: "Recording Failed", message: message)
             recorder.reset()
         }
+
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            observer,
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let appState = Unmanaged<AppState>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in
+                    appState.replacementSettings = ReplacementSettings.load()
+                }
+            },
+            "com.miniwhisper.config-changed" as CFString,
+            nil,
+            .deliverImmediately
+        )
     }
 
     // MARK: - Post-processing
