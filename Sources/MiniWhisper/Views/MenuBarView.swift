@@ -647,7 +647,7 @@ private struct SettingsPopoverView: View {
                     .tracking(0.5)
 
                 HStack {
-                    Text("Convert common phrases into symbols")
+                    Text("Convert spoken phrases like 'open bracket' into symbols")
                         .font(.system(size: 13))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
