@@ -55,7 +55,7 @@ enum TranscriptionFormatter {
         while let last = result.last, last.isWhitespace {
             result = result.dropLast()
         }
-        while let last = result.last, last == "." || last == "!" || last == "?" {
+        while let last = result.last, last == "." || last == "!" || last == "?" || last == "," {
             result = result.dropLast()
         }
         return String(result)
