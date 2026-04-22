@@ -488,21 +488,24 @@ private struct FooterBarView: View {
                 ModelPickerView().resignsResponderOnClose()
             }
 
-            FooterButton(
-                icon: "arrow.left.arrow.right", label: "Replace",
-                color: appState.replacementSettings.enabled ? .primary : .secondary
-            ) {
-                showReplacements.toggle()
-            }
-            .popover(isPresented: $showReplacements, arrowEdge: .bottom) {
-                ReplacementsView(
-                    settings: Binding(
-                        get: { appState.replacementSettings },
-                        set: { appState.replacementSettings = $0 }
-                    ),
-                    onSave: { appState.replacementSettings.save() }
-                )
-                .resignsResponderOnClose()
+            if appState.replacementSettings.enabled {
+                FooterButton(
+                    icon: "arrow.left.arrow.right", label: "Replace",
+                    color: .primary
+                ) {
+                    showReplacements.toggle()
+                }
+                .popover(isPresented: $showReplacements, arrowEdge: .bottom) {
+                    ReplacementsView(
+                        settings: Binding(
+                            get: { appState.replacementSettings },
+                            set: { appState.replacementSettings = $0 }
+                        ),
+                        onSave: { appState.replacementSettings.save() }
+                    )
+                    .popoverFocusSink()
+                    .resignsResponderOnClose()
+                }
             }
 
             FooterButton(icon: "textformat", label: "Format", color: .secondary) {
@@ -523,7 +526,9 @@ private struct FooterBarView: View {
                 showSettings.toggle()
             }
             .popover(isPresented: $showSettings, arrowEdge: .bottom) {
-                SettingsPopoverView().resignsResponderOnClose()
+                SettingsPopoverView()
+                    .popoverFocusSink()
+                    .resignsResponderOnClose()
             }
 
             FooterButton(icon: "xmark.circle", label: "Quit", color: .red) {
