@@ -80,6 +80,10 @@ struct SettingsPopoverView: View {
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
+
+                if appState.replacementSettings.enabled {
+                    ClaudeSkillRow()
+                }
             }
 
             // Custom Endpoint only applies to the Custom transcription mode.
@@ -330,6 +334,132 @@ private struct ReadOnlyFieldDisplay: View {
             RoundedRectangle(cornerRadius: 5)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - Claude Code Skill Row
+//
+// Rendered as a sub-row inside the Replacements section. The skill writes
+// rules into `replacements.json`, so it only makes sense to surface when
+// replacements themselves are enabled — otherwise rules would land in the
+// file but never apply to transcriptions.
+
+private struct ClaudeSkillRow: View {
+    @Environment(AppState.self) private var appState
+    private let manager = ClaudeSkillManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Claude Code skill")
+                        .font(.system(size: 13))
+                    Text("Allow Claude to add replacements automatically")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    subtitle
+                }
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { manager.isEnabled },
+                        set: { toggle($0) }
+                    )
+                )
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .disabled(!manager.claudeCodeInstalled || manager.hasConflict)
+            }
+
+            actionRow
+        }
+        .onAppear { manager.refresh() }
+    }
+
+    // Hidden entirely in the healthy `.upToDate` state — we only surface text
+    // when the user needs to know or act on something.
+    @ViewBuilder
+    private var subtitle: some View {
+        if !manager.claudeCodeInstalled {
+            Text("Claude Code not detected")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if manager.hasConflict {
+            Text("Another skill with this name already exists")
+                .font(.system(size: 11))
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let statusText {
+            Text(statusText)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.accentColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var actionRow: some View {
+        if manager.hasConflict {
+            HStack {
+                Spacer()
+                Button("Show in Finder") { manager.revealConflictInFinder() }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .font(.system(size: 11))
+        } else if manager.claudeCodeInstalled, let updateButtonLabel {
+            HStack {
+                Spacer()
+                Button(updateButtonLabel, action: applyUpdate)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .font(.system(size: 11))
+        }
+    }
+
+    private var statusText: String? {
+        switch manager.syncStatus {
+        case .upToDate: return nil
+        case .updateAvailable: return "Update available"
+        case .modified: return "Modified"
+        case .modifiedAndUpdateAvailable: return "Modified · update available"
+        }
+    }
+
+    private var updateButtonLabel: String? {
+        switch manager.syncStatus {
+        case .upToDate: return nil
+        case .updateAvailable: return "Update"
+        case .modified: return "Reset to default"
+        case .modifiedAndUpdateAvailable: return "Update (overwrites edits)"
+        }
+    }
+
+    private func toggle(_ on: Bool) {
+        do {
+            try on ? manager.enable() : manager.disable()
+        } catch {
+            appState.toast.showError(
+                title: on ? "Couldn't Enable Skill" : "Couldn't Disable Skill",
+                message: error.localizedDescription
+            )
+            manager.refresh()
+        }
+    }
+
+    private func applyUpdate() {
+        do {
+            try manager.applyBundledVersion()
+        } catch {
+            appState.toast.showError(
+                title: "Update Failed",
+                message: error.localizedDescription
+            )
+        }
     }
 }
 
