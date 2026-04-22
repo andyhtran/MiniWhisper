@@ -86,6 +86,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupServices() async {
+        ClaudeSkillManager.shared.syncBundleToDocumentsIfClean()
+
         try? await appState.recordingStore.loadAll()
         appState.recordingStore.performRetention()
 

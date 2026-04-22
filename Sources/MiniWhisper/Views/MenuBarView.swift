@@ -112,7 +112,9 @@ private struct RecordingHeaderView: View {
         switch appState.recorder.state {
         case .idle:
             if appState.isModelDownloading { return "Downloading Model..." }
-            if appState.transcriptionMode == .custom && !appState.customProviderSettings.isConfigured {
+            if appState.transcriptionMode == .custom
+                && !appState.customProviderSettings.isConfigured
+            {
                 return "Configure Endpoint"
             }
             return appState.isModelLoaded ? "Ready" : "Loading Model..."
@@ -190,7 +192,8 @@ private struct MicrophoneSection: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
+                        .fill(
+                            isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
                 )
                 .contentShape(Rectangle())
             }
@@ -312,14 +315,15 @@ private struct ShortcutSection: View {
 
             if isEditing {
                 HStack(spacing: 8) {
-                    ShortcutRecorderView(shortcut: Binding(
-                        get: { CustomShortcutStorage.get(.toggleRecording) },
-                        set: { newShortcut in
-                            CustomShortcutStorage.set(newShortcut, for: .toggleRecording)
-                            appState.reloadShortcuts()
-                            isEditing = false
-                        }
-                    ))
+                    ShortcutRecorderView(
+                        shortcut: Binding(
+                            get: { CustomShortcutStorage.get(.toggleRecording) },
+                            set: { newShortcut in
+                                CustomShortcutStorage.set(newShortcut, for: .toggleRecording)
+                                appState.reloadShortcuts()
+                                isEditing = false
+                            }
+                        ))
 
                     Spacer()
 
@@ -384,7 +388,9 @@ private struct PermissionsBanner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Permissions Needed", icon: "exclamationmark.shield.fill", iconColor: .orange)
+            SectionHeader(
+                title: "Permissions Needed", icon: "exclamationmark.shield.fill", iconColor: .orange
+            )
 
             VStack(spacing: 4) {
                 if !appState.permissions.accessibilityGranted {
@@ -472,25 +478,34 @@ private struct FooterBarView: View {
         HStack(spacing: 0) {
             Spacer()
 
-            FooterButton(icon: modelPickerIcon, label: "Model", color: appState.transcriptionMode == .default ? .secondary : .accentColor) {
+            FooterButton(
+                icon: modelPickerIcon, label: "Model",
+                color: appState.transcriptionMode == .default ? .secondary : .accentColor
+            ) {
                 showModelPicker.toggle()
             }
             .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
                 ModelPickerView().resignsResponderOnClose()
             }
 
-            FooterButton(icon: "arrow.left.arrow.right", label: "Replace", color: appState.replacementSettings.enabled ? .primary : .secondary) {
-                showReplacements.toggle()
-            }
-            .popover(isPresented: $showReplacements, arrowEdge: .bottom) {
-                ReplacementsView(
-                    settings: Binding(
-                        get: { appState.replacementSettings },
-                        set: { appState.replacementSettings = $0 }
-                    ),
-                    onSave: { appState.replacementSettings.save() }
-                )
-                .resignsResponderOnClose()
+            if appState.replacementSettings.enabled {
+                FooterButton(
+                    icon: "arrow.left.arrow.right", label: "Replace",
+                    color: .primary
+                ) {
+                    showReplacements.toggle()
+                }
+                .popover(isPresented: $showReplacements, arrowEdge: .bottom) {
+                    ReplacementsView(
+                        settings: Binding(
+                            get: { appState.replacementSettings },
+                            set: { appState.replacementSettings = $0 }
+                        ),
+                        onSave: { appState.replacementSettings.save() }
+                    )
+                    .popoverFocusSink()
+                    .resignsResponderOnClose()
+                }
             }
 
             FooterButton(icon: "textformat", label: "Format", color: .secondary) {
@@ -511,7 +526,9 @@ private struct FooterBarView: View {
                 showSettings.toggle()
             }
             .popover(isPresented: $showSettings, arrowEdge: .bottom) {
-                SettingsPopoverView().resignsResponderOnClose()
+                SettingsPopoverView()
+                    .popoverFocusSink()
+                    .resignsResponderOnClose()
             }
 
             FooterButton(icon: "xmark.circle", label: "Quit", color: .red) {
@@ -589,509 +606,3 @@ private struct FooterButton: View {
     }
 }
 
-private struct SettingsPopoverView: View {
-    @Environment(AppState.self) private var appState
-    @StateObject private var launchManager = LaunchAtLoginManager.shared
-    // Local mirror of the UserDefaults-backed VAD toggle so SwiftUI re-renders
-    // when flipped. VADSettings isn't @Observable — it's a plain wrapper.
-    @State private var vadEnabled = VADSettings.enabled
-
-    var body: some View {
-        @Bindable var appState = appState
-
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Launch at Login")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                HStack {
-                    Text("Start MiniWhisper when you log in")
-                        .font(.system(size: 13))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { launchManager.isEnabled },
-                            set: { launchManager.isEnabled = $0 }
-                        )
-                    )
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                }
-            }
-
-            // Custom Endpoint only applies to the Custom transcription mode.
-            // Local models (Parakeet / Whisper) run on-device and don't
-            // need URL/key/model config or silence trimming, so the whole
-            // section is hidden for them.
-            if appState.transcriptionMode == .custom {
-                Divider()
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Custom Endpoint")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Endpoint URL")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        TextField("https://api.example.com/v1/audio/transcriptions", text: $appState.customProviderSettings.endpointURL)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("API Key (optional)")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        SecureField("sk-...", text: $appState.customProviderSettings.apiKey)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Model Name")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        TextField("whisper-large-v3", text: $appState.customProviderSettings.modelName)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
-                    }
-
-                    HStack {
-                        Text("Trim long silences")
-                            .font(.system(size: 13))
-                        Spacer()
-                        Toggle(
-                            "",
-                            isOn: Binding(
-                                get: { vadEnabled },
-                                set: {
-                                    vadEnabled = $0
-                                    VADSettings.enabled = $0
-                                }
-                            )
-                        )
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                    }
-                }
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Recordings")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                OpenRecordingsFolderRow()
-            }
-        }
-        .padding(12)
-        .frame(width: 300)
-        .onChange(of: appState.customProviderSettings) {
-            appState.customProviderSettings.save()
-        }
-        .onAppear {
-            launchManager.refresh()
-            vadEnabled = VADSettings.enabled
-        }
-    }
-}
-
-private struct FormatPopoverView: View {
-    // Local mirror so SwiftUI re-renders when the user toggles values.
-    // FormattingSettings is a UserDefaults wrapper, not @Observable.
-    @State private var capitalization = FormattingSettings.capitalization
-    @State private var autoParagraph = FormattingSettings.autoParagraph
-    @State private var dropTrailingPunctuation = FormattingSettings.dropTrailingPunctuation
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Formatting")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            HStack {
-                Text("Capitalization")
-                    .font(.system(size: 13))
-                Spacer()
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { capitalization },
-                        set: {
-                            capitalization = $0
-                            FormattingSettings.capitalization = $0
-                        }
-                    )
-                ) {
-                    ForEach(CapitalizationStyle.allCases, id: \.self) { style in
-                        Text(style.displayName).tag(style)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-            }
-
-            HStack {
-                Text("Auto paragraphs")
-                    .font(.system(size: 13))
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { autoParagraph },
-                        set: {
-                            autoParagraph = $0
-                            FormattingSettings.autoParagraph = $0
-                        }
-                    )
-                )
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
-
-            HStack {
-                Text("Drop trailing punctuation")
-                    .font(.system(size: 13))
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { dropTrailingPunctuation },
-                        set: {
-                            dropTrailingPunctuation = $0
-                            FormattingSettings.dropTrailingPunctuation = $0
-                        }
-                    )
-                )
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
-        }
-        .padding(12)
-        .frame(width: 280)
-        .onAppear {
-            capitalization = FormattingSettings.capitalization
-            autoParagraph = FormattingSettings.autoParagraph
-            dropTrailingPunctuation = FormattingSettings.dropTrailingPunctuation
-        }
-    }
-}
-
-private struct OpenRecordingsFolderRow: View {
-    @State private var isHovering = false
-
-    var body: some View {
-        Button {
-            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .frame(width: 20)
-
-                Text("Open Recordings Folder")
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovering = hovering
-            }
-        }
-    }
-}
-
-// MARK: - History Popover
-
-private struct HistoryPopoverView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Recent")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .padding(.horizontal, 10)
-
-            if appState.recordingStore.recentHistoryItems.isEmpty {
-                Text("No recent transcripts")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary.opacity(0.7))
-                    .italic()
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 10)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(appState.recordingStore.recentHistoryItems) { recording in
-                        HistoryPopoverRow(recording: recording)
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .frame(width: 300)
-    }
-}
-
-private struct HistoryPopoverRow: View {
-    @Environment(AppState.self) private var appState
-    let recording: Recording
-    @State private var copied = false
-    @State private var isHovering = false
-
-    var body: some View {
-        Group {
-            if let text = recording.transcription?.text {
-                Button {
-                    appState.pasteboard.copy(text)
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        copied = false
-                    }
-                } label: {
-                    rowContent
-                }
-                .buttonStyle(.plain)
-            } else {
-                rowContent
-            }
-        }
-        .animation(.easeInOut(duration: 0.12), value: isHovering)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: copied)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovering = hovering
-            }
-        }
-    }
-
-    private var rowContent: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(primaryText)
-                    .font(.system(size: 13))
-                    .lineLimit(2)
-                    .foregroundColor(recording.transcription != nil ? .primary : .secondary)
-
-                HStack(spacing: 4) {
-                    Text(formatDate(recording.createdAt))
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary.opacity(0.7))
-
-                    if recording.transcription != nil {
-                        Text("·")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary.opacity(0.4))
-                        Text(recording.configuration.voiceModel)
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary.opacity(0.5))
-                    }
-                }
-            }
-
-            Spacer(minLength: 12)
-
-            if recording.transcription != nil {
-                HStack(spacing: 6) {
-                    if recording.canRetranscribeAsNew && isHovering && !copied {
-                        Button {
-                            appState.retranscribeAsNew(recording)
-                        } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 12))
-                                .foregroundColor(isRetranscribeDisabled ? .secondary : .accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isRetranscribeDisabled)
-                        .help("Re-transcribe with current model")
-                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                    }
-
-                    if copied {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.system(size: 15))
-                            .transition(.scale.combined(with: .opacity))
-                    } else if isHovering {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                    }
-                }
-            } else if recording.status == .cancelled {
-                if recording.canRetranscribe {
-                    Button("Re-transcribe") {
-                        appState.retranscribe(recording)
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(isReTranscribeDisabled ? .secondary : .accentColor)
-                    .disabled(isReTranscribeDisabled)
-                } else {
-                    Text("Audio expired")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
-        )
-        .contentShape(Rectangle())
-    }
-
-    private var primaryText: String {
-        if let text = recording.transcription?.text {
-            return text
-        }
-        if recording.status == .cancelled {
-            return "Canceled recording"
-        }
-        return "No transcription"
-    }
-
-    private var isReTranscribeDisabled: Bool {
-        recording.canRetranscribe == false || appState.recorder.state.isRecording || appState.recorder.state == .processing
-    }
-
-    private var isRetranscribeDisabled: Bool {
-        appState.recorder.state.isRecording || appState.recorder.state == .processing
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
-}
-
-/// Renders all menu bar icon states into NSImage so the view identity stays
-/// stable across state transitions (no flicker). SF Symbols are rasterized
-/// through NSImage(symbolName:) for idle/processing; the recording state
-/// draws custom animated bars.
-enum MenuBarIconRenderer {
-    // Bar geometry for the recording meter
-    private static let barWidth: CGFloat = 3
-    private static let barSpacing: CGFloat = 2
-    private static let maxHeight: CGFloat = 16
-    private static let sideScale: CGFloat = 0.65
-    private static let minFraction: CGFloat = 0.2
-
-    static func render(state: RecordingState, meterLevel: Double) -> NSImage {
-        switch state {
-        case .recording:
-            return renderMeterBars(level: meterLevel)
-        case .processing:
-            return renderSymbol("waveform.badge.ellipsis")
-        default:
-            return renderSymbol("waveform")
-        }
-    }
-
-    /// Render an SF Symbol as a template NSImage sized for the menu bar.
-    private static func renderSymbol(_ name: String) -> NSImage {
-        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-        if let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
-            let configured = image.withSymbolConfiguration(config) ?? image
-            configured.isTemplate = true
-            return configured
-        }
-        // Fallback — should never happen with known symbol names
-        return NSImage(size: NSSize(width: 18, height: 18))
-    }
-
-    /// Draw three rounded red bars whose height tracks the mic level.
-    private static func renderMeterBars(level: Double) -> NSImage {
-        let totalWidth = barWidth * 3 + barSpacing * 2
-        let size = NSSize(width: totalWidth, height: maxHeight)
-
-        let image = NSImage(size: size, flipped: false) { _ in
-            let effectiveLevel = minFraction + CGFloat(level) * (1.0 - minFraction)
-
-            let scales: [CGFloat] = [sideScale, 1.0, sideScale]
-            for (i, scale) in scales.enumerated() {
-                let barHeight = max(maxHeight * effectiveLevel * scale, barWidth)
-                let x = CGFloat(i) * (barWidth + barSpacing)
-                let y = (maxHeight - barHeight) / 2.0
-                let barRect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
-                let path = NSBezierPath(roundedRect: barRect, xRadius: barWidth / 2, yRadius: barWidth / 2)
-                NSColor.systemRed.setFill()
-                path.fill()
-            }
-            return true
-        }
-
-        image.isTemplate = false
-        return image
-    }
-}
-
-// MARK: - Popover Responder Cleanup
-
-// SwiftUI's `.popover` tears down its hosting window while a TextField inside
-// can still be first responder. The orphaned NSTextView then lives on,
-// registered as responder for a now-null window, and the next popover that
-// tries to set up first responder crashes in -[NSWindow _newFirstResponderAfterResigning].
-//
-// PopoverResponderResetView sits invisibly in the popover content and watches
-// for `viewWillMove(toWindow: nil)` — the last point where the popover's
-// window is still live. At that moment we tell the window to clear its first
-// responder cleanly, which gives the TextField a chance to resignFirstResponder
-// while its window still exists.
-private struct PopoverResponderReset: NSViewRepresentable {
-    final class ResetView: NSView {
-        override func viewWillMove(toWindow newWindow: NSWindow?) {
-            if newWindow == nil, let current = self.window {
-                current.makeFirstResponder(nil)
-            }
-            super.viewWillMove(toWindow: newWindow)
-        }
-    }
-
-    func makeNSView(context: Context) -> NSView { ResetView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-private extension View {
-    func resignsResponderOnClose() -> some View {
-        background(PopoverResponderReset().frame(width: 0, height: 0).allowsHitTesting(false))
-    }
-}

@@ -10,17 +10,17 @@ struct CaptureSessionInfo: Sendable {
 }
 
 final class CoreAudioInputCapture: @unchecked Sendable {
-    private let logger = Logger(subsystem: Logger.subsystem, category: "CoreAudioInputCapture")
-    private let controlQueue: DispatchQueue
+    let logger = Logger(subsystem: Logger.subsystem, category: "CoreAudioInputCapture")
+    let controlQueue: DispatchQueue
 
     var onRMS: ((Float) -> Void)?
     var onSessionFailure: ((String) -> Void)?
 
-    private var audioUnit: AudioUnit?
+    var audioUnit: AudioUnit?
     private var audioFile: ExtAudioFileRef?
-    private var currentDeviceID: AudioDeviceID = 0
+    var currentDeviceID: AudioDeviceID = 0
     private var currentDeviceName = "Unknown Device"
-    private var isRecording = false
+    var isRecording = false
 
     private var inputFormat = AudioStreamBasicDescription()
     private var fileFormat = AudioStreamBasicDescription()
@@ -29,7 +29,7 @@ final class CoreAudioInputCapture: @unchecked Sendable {
     private var monoBuffer: UnsafeMutablePointer<Float>?
     private var bufferCapacityFrames: UInt32 = 0
 
-    private var listenersInstalled = false
+    var listenersInstalled = false
     private var hasReportedFailure = false
     private let failureLock = NSLock()
 
@@ -49,7 +49,7 @@ final class CoreAudioInputCapture: @unchecked Sendable {
         }
 
         currentDeviceID = deviceID
-        currentDeviceName = Self.queryDeviceName(deviceID) ?? "Unknown Device"
+        currentDeviceName = CoreAudioDeviceQueries.queryDeviceName(deviceID) ?? "Unknown Device"
         hasReportedFailure = false
 
         try createAudioUnit()
@@ -229,7 +229,7 @@ final class CoreAudioInputCapture: @unchecked Sendable {
     }
 
     private func preallocateBuffers(for deviceID: AudioDeviceID) throws {
-        let preferredFrameCount = max(Self.queryBufferFrameSize(deviceID), 1024)
+        let preferredFrameCount = max(CoreAudioDeviceQueries.queryBufferFrameSize(deviceID), 1024)
         bufferCapacityFrames = min(max(preferredFrameCount * 4, 4096), 16384)
 
         renderBuffer = UnsafeMutablePointer<Float>.allocate(
@@ -424,141 +424,7 @@ final class CoreAudioInputCapture: @unchecked Sendable {
         return noErr
     }
 
-    private func installDeviceListeners() {
-        guard !listenersInstalled else { return }
-
-        let userData = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-
-        var aliveAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceIsAlive,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        let aliveStatus = AudioObjectAddPropertyListener(
-            currentDeviceID,
-            &aliveAddress,
-            Self.devicePropertyListener,
-            userData
-        )
-
-        var devicesAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        let devicesStatus = AudioObjectAddPropertyListener(
-            AudioObjectID(kAudioObjectSystemObject),
-            &devicesAddress,
-            Self.devicePropertyListener,
-            userData
-        )
-
-        if aliveStatus == noErr && devicesStatus == noErr {
-            listenersInstalled = true
-        } else {
-            if aliveStatus == noErr {
-                AudioObjectRemovePropertyListener(
-                    currentDeviceID,
-                    &aliveAddress,
-                    Self.devicePropertyListener,
-                    userData
-                )
-            }
-            if devicesStatus == noErr {
-                AudioObjectRemovePropertyListener(
-                    AudioObjectID(kAudioObjectSystemObject),
-                    &devicesAddress,
-                    Self.devicePropertyListener,
-                    userData
-                )
-            }
-            listenersInstalled = false
-            logger.error("Failed to install device listeners (alive: \(aliveStatus), devices: \(devicesStatus))")
-        }
-    }
-
-    private func uninstallDeviceListeners() {
-        guard listenersInstalled else { return }
-
-        let userData = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-
-        var aliveAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceIsAlive,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectRemovePropertyListener(
-            currentDeviceID,
-            &aliveAddress,
-            Self.devicePropertyListener,
-            userData
-        )
-
-        var devicesAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectRemovePropertyListener(
-            AudioObjectID(kAudioObjectSystemObject),
-            &devicesAddress,
-            Self.devicePropertyListener,
-            userData
-        )
-
-        listenersInstalled = false
-    }
-
-    private static let devicePropertyListener: AudioObjectPropertyListenerProc = { _, _, _, userData in
-        guard let userData else { return noErr }
-        let capture = Unmanaged<CoreAudioInputCapture>.fromOpaque(userData).takeUnretainedValue()
-        capture.controlQueue.async { [weak capture] in
-            capture?.validateActiveDevice()
-        }
-        return noErr
-    }
-
-    private func validateActiveDevice() {
-        guard isRecording else { return }
-
-        var alive: UInt32 = 0
-        var aliveSize = UInt32(MemoryLayout<UInt32>.size)
-        var aliveAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceIsAlive,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        let aliveStatus = AudioObjectGetPropertyData(
-            currentDeviceID,
-            &aliveAddress,
-            0,
-            nil,
-            &aliveSize,
-            &alive
-        )
-        guard aliveStatus == noErr, alive != 0 else {
-            reportFailureAsync("Selected microphone disconnected during recording.")
-            return
-        }
-
-        guard let audioUnit else { return }
-        var routedDevice = AudioDeviceID(0)
-        var routedSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let routeStatus = AudioUnitGetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &routedDevice,
-            &routedSize
-        )
-        guard routeStatus == noErr, routedDevice == currentDeviceID else {
-            reportFailureAsync("Selected microphone routing changed during recording.")
-            return
-        }
-    }
-
-    private func reportFailureAsync(_ message: String) {
+    func reportFailureAsync(_ message: String) {
         failureLock.lock()
         let shouldReport = !hasReportedFailure
         if shouldReport {
@@ -576,91 +442,5 @@ final class CoreAudioInputCapture: @unchecked Sendable {
         }
     }
 
-    private static func queryBufferFrameSize(_ deviceID: AudioDeviceID) -> UInt32 {
-        var frameSize: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyBufferFrameSize,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        let status = AudioObjectGetPropertyData(
-            deviceID,
-            &address,
-            0,
-            nil,
-            &size,
-            &frameSize
-        )
-        if status == noErr, frameSize > 0 {
-            return frameSize
-        }
-        return 1024
-    }
-
-    private static func queryDeviceName(_ deviceID: AudioDeviceID) -> String? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceNameCFString,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var nameRef: Unmanaged<CFString>?
-        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &nameRef)
-        guard status == noErr, let name = nameRef?.takeRetainedValue() else { return nil }
-        return name as String
-    }
 }
 
-enum CoreAudioInputCaptureError: LocalizedError {
-    case invalidDeviceID
-    case audioUnitNotFound
-    case audioUnitNotInitialized
-    case invalidInputFormat
-    case failedToCreateAudioUnit(status: OSStatus)
-    case failedToEnableInput(status: OSStatus)
-    case failedToDisableOutput(status: OSStatus)
-    case failedToSetDevice(status: OSStatus)
-    case failedToGetInputFormat(status: OSStatus)
-    case failedToSetCallbackFormat(status: OSStatus)
-    case failedToSetInputCallback(status: OSStatus)
-    case failedToCreateOutputFile(status: OSStatus)
-    case failedToSetFileFormat(status: OSStatus)
-    case failedToInitializeAudioUnit(status: OSStatus)
-    case failedToStartAudioUnit(status: OSStatus)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidDeviceID:
-            return "Invalid input device"
-        case .audioUnitNotFound:
-            return "Failed to create audio capture unit"
-        case .audioUnitNotInitialized:
-            return "Audio capture is not initialized"
-        case .invalidInputFormat:
-            return "Input device has an invalid stream format"
-        case .failedToCreateAudioUnit(let status):
-            return "Failed to create audio unit (\(status))"
-        case .failedToEnableInput(let status):
-            return "Failed to enable audio input (\(status))"
-        case .failedToDisableOutput(let status):
-            return "Failed to configure output path (\(status))"
-        case .failedToSetDevice(let status):
-            return "Failed to bind selected microphone (\(status))"
-        case .failedToGetInputFormat(let status):
-            return "Failed to query input stream format (\(status))"
-        case .failedToSetCallbackFormat(let status):
-            return "Failed to configure callback stream format (\(status))"
-        case .failedToSetInputCallback(let status):
-            return "Failed to install audio input callback (\(status))"
-        case .failedToCreateOutputFile(let status):
-            return "Failed to create recording file (\(status))"
-        case .failedToSetFileFormat(let status):
-            return "Failed to configure recording file format (\(status))"
-        case .failedToInitializeAudioUnit(let status):
-            return "Failed to initialize audio capture (\(status))"
-        case .failedToStartAudioUnit(let status):
-            return "Failed to start audio capture (\(status))"
-        }
-    }
-}
