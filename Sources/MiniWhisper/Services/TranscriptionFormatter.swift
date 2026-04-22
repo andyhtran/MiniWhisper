@@ -1,26 +1,29 @@
 import Foundation
 
 /// Single entry point for all post-transcription text processing. Wraps
-/// replacement rules, capitalization, auto-paragraph, and trailing-punctuation
-/// stripping into one ordered pipeline so every consumer sees the same
-/// canonical output.
+/// Spoken Symbols, replacement rules, capitalization, auto-paragraph, and
+/// trailing-punctuation stripping into one ordered pipeline so every
+/// consumer sees the same canonical output.
 ///
-/// Pipeline order is deliberate:
-/// 1. Replacements run on raw text (content layer — *what* the text says).
-/// 2. Casing is adjusted (style layer — *how* it looks).
-/// 3. Paragraph breaks are inserted.
-/// 4. Trailing sentence punctuation is stripped last so it also cleans up
-///    any terminal `.` / `!` / `?` introduced by a replacement rule.
+/// Pipeline order is deliberate: Spoken Symbols run first so user
+/// replacement rules operate on normalized text, then casing, then
+/// auto-paragraph, then trailing-punctuation strip (last so it also
+/// cleans up any terminal `.` / `!` / `?` a replacement introduced).
 enum TranscriptionFormatter {
     struct Options: Sendable {
         let replacementRules: [ReplacementRule]
         let capitalization: CapitalizationStyle
         let autoParagraph: Bool
         let dropTrailingPunctuation: Bool
+        let spokenSymbolsEnabled: Bool
     }
 
     static func format(_ text: String, options: Options) -> String {
         var result = text
+
+        if options.spokenSymbolsEnabled {
+            result = ReplacementProcessor(rules: SpokenSymbols.rules).apply(to: result)
+        }
 
         if !options.replacementRules.isEmpty {
             let processor = ReplacementProcessor(rules: options.replacementRules)
@@ -55,7 +58,7 @@ enum TranscriptionFormatter {
         while let last = result.last, last.isWhitespace {
             result = result.dropLast()
         }
-        while let last = result.last, last == "." || last == "!" || last == "?" {
+        while let last = result.last, last == "." || last == "!" || last == "?" || last == "," {
             result = result.dropLast()
         }
         return String(result)
