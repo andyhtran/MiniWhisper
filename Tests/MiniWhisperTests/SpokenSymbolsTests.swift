@@ -52,6 +52,12 @@ struct SpokenSymbolsTests {
         ("tilde expansion", "~ expansion"),
         ("tilda expansion", "~ expansion"),
 
+        // Hyphen joins adjacent words without leaving spaces: kebab-case
+        // identifiers, CLI flags, compound modifiers.
+        ("foo hyphen bar", "foo-bar"),
+        ("state hyphen of hyphen the hyphen art", "state-of-the-art"),
+        ("dry hyphen run flag", "dry-run flag"),
+
         // Language names.
         ("c plus plus is my favorite", "c++ is my favorite"),
         ("writing c sharp code", "writing C# code"),
@@ -83,6 +89,10 @@ struct SpokenSymbolsTests {
         // Documents the excluded ` dash ` → `-` rule: this natural-English
         // phrase must pass through untouched.
         "mad dash to the finish",
+
+        // Meta-mention of "hyphen" (not between two words) stays put
+        // because the rule requires a space on both sides.
+        "the writer added a hyphen.",
 
         // Documents the excluded `caret` → `^` rule: "carrot" must pass
         // through and never become `^`.

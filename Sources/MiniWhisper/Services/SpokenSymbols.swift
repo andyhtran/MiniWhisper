@@ -57,6 +57,9 @@ enum SpokenSymbols {
         ReplacementRule(find: "dot html", replace: ".html"),
         ReplacementRule(find: "dot css", replace: ".css"),
         ReplacementRule(find: "semicolon", replace: ";"),
+        // Space-eating so `foo hyphen bar` → `foo-bar` (kebab-case, CLI
+        // flags, URL slugs). `dash` stays excluded — "mad dash" et al.
+        ReplacementRule(find: " hyphen ", replace: "-"),
         ReplacementRule(find: "backslash", replace: "\\"),
         ReplacementRule(find: "ampersand", replace: "&"),
         ReplacementRule(find: "backtick", replace: "`"),
