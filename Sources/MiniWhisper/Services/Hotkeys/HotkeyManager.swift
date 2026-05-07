@@ -6,6 +6,8 @@ import AppKit
 protocol HotkeyManagerDelegate: AnyObject {
     nonisolated func hotkeyDidToggleRecording()
     nonisolated func hotkeyDidCancelRecording()
+    nonisolated func hotkeyDidToggleAutoCleanupRecording()
+    nonisolated func hotkeyDidEditSelection()
 }
 
 @MainActor
@@ -21,6 +23,8 @@ final class HotkeyManager {
     func start() {
         setupToggleRecording()
         setupCancelRecording()
+        setupAutoCleanupRecording()
+        setupEditSelection()
         shortcutMonitor.start()
     }
 
@@ -57,6 +61,34 @@ final class HotkeyManager {
         }
         shortcutMonitor.onKeyUp(for: .cancelRecording) { [weak self] in
             self?.delegate?.hotkeyDidCancelRecording()
+        }
+    }
+
+    private func setupAutoCleanupRecording() {
+        // Gate at event-tap time on the AI Editing setting so the
+        // shortcut passes through to the frontmost app when auto-cleanup
+        // isn't enabled. Mirrors editSelection's pattern.
+        shortcutMonitor.setEnabledCheck(for: .autoCleanupRecording) {
+            EditModeSettings.behavior.autoCleanupEnabled
+        }
+        shortcutMonitor.onKeyDown(for: .autoCleanupRecording) { [weak self] in
+            self?.delegate?.hotkeyDidToggleAutoCleanupRecording()
+        }
+    }
+
+    private func setupEditSelection() {
+        // Gate at event-tap time on the persisted setting so when edit
+        // mode is off, ⌥E (or whatever the user bound) passes through to
+        // the frontmost app instead of being consumed. UserDefaults is
+        // thread-safe — no callback wiring needed.
+        shortcutMonitor.setEnabledCheck(for: .editSelection) {
+            EditModeSettings.behavior.voiceEditEnabled
+        }
+        // Fire on keyUp so the user's modifier (e.g. ⌥) has been released
+        // before we synthesize ⌘C — otherwise the held modifier combines
+        // with the synthetic Cmd and the target app sees ⌥⌘C instead.
+        shortcutMonitor.onKeyUp(for: .editSelection) { [weak self] in
+            self?.delegate?.hotkeyDidEditSelection()
         }
     }
 }

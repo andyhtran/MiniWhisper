@@ -109,6 +109,7 @@ private struct RecordingHeaderView: View {
         if !appState.permissions.allGranted {
             return "Permissions Required"
         }
+        if appState.isEditModeProcessing { return editingStatusText }
         switch appState.recorder.state {
         case .idle:
             if appState.isModelDownloading { return "Downloading Model..." }
@@ -128,6 +129,18 @@ private struct RecordingHeaderView: View {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    /// Surfaces the selection size for larger edits so the user knows
+    /// why it might take a bit. Below the threshold the count is noise,
+    /// so we keep the plain "Editing…" treatment.
+    private var editingStatusText: String {
+        let count = appState.editModeProcessingCharCount
+        guard count >= EditModeProvider.softCharThreshold else {
+            return "Editing..."
+        }
+        let formatted = count.formatted(.number.grouping(.automatic))
+        return "Editing \(formatted) chars..."
     }
 }
 
@@ -306,75 +319,93 @@ private struct MicPickerRow: View {
 
 private struct ShortcutSection: View {
     @Environment(AppState.self) private var appState
-    @State private var isEditing = false
-    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Shortcut", icon: "command")
 
-            if isEditing {
-                HStack(spacing: 8) {
-                    ShortcutRecorderView(
-                        shortcut: Binding(
-                            get: { CustomShortcutStorage.get(.toggleRecording) },
-                            set: { newShortcut in
-                                CustomShortcutStorage.set(newShortcut, for: .toggleRecording)
-                                appState.reloadShortcuts()
-                                isEditing = false
-                            }
-                        ))
+            ShortcutRow(label: "Toggle Recording", name: .toggleRecording)
 
-                    Spacer()
+            if appState.autoCleanupEnabled {
+                ShortcutRow(label: "Cleanup Recording", name: .autoCleanupRecording)
+            }
 
-                    Button {
-                        isEditing = false
-                    } label: {
-                        Text("Cancel")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.primary.opacity(0.08))
-                )
-            } else {
-                Button {
-                    isEditing = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Text("Toggle Recording")
-                            .font(.system(size: 13))
+            if appState.voiceEditEnabled {
+                ShortcutRow(label: "Edit Selection", name: .editSelection)
+            }
+        }
+    }
+}
 
-                        Spacer(minLength: 12)
+private struct ShortcutRow: View {
+    @Environment(AppState.self) private var appState
+    let label: String
+    let name: CustomShortcutName
+    @State private var isEditing = false
+    @State private var isHovering = false
 
-                        if let shortcut = CustomShortcutStorage.get(.toggleRecording) {
-                            Text(shortcut.compactDisplayString)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Not Set")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
+    var body: some View {
+        if isEditing {
+            HStack(spacing: 8) {
+                ShortcutRecorderView(
+                    shortcut: Binding(
+                        get: { CustomShortcutStorage.get(name) },
+                        set: { newShortcut in
+                            CustomShortcutStorage.set(newShortcut, for: name)
+                            appState.reloadShortcuts()
+                            isEditing = false
                         }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
+                    ))
+
+                Spacer()
+
+                Button {
+                    isEditing = false
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        isHovering = hovering
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.primary.opacity(0.08))
+            )
+        } else {
+            Button {
+                isEditing = true
+            } label: {
+                HStack(spacing: 8) {
+                    Text(label)
+                        .font(.system(size: 13))
+
+                    Spacer(minLength: 12)
+
+                    if let shortcut = CustomShortcutStorage.get(name) {
+                        Text(shortcut.compactDisplayString)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Not Set")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
                     }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isHovering = hovering
                 }
             }
         }
@@ -480,12 +511,14 @@ private struct FooterBarView: View {
 
             FooterButton(
                 icon: modelPickerIcon, label: "Model",
-                color: appState.transcriptionMode == .default ? .secondary : .accentColor
+                color: modelPickerColor
             ) {
                 showModelPicker.toggle()
             }
             .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
-                ModelPickerView().resignsResponderOnClose()
+                ModelPickerView()
+                    .popoverFocusSink()
+                    .resignsResponderOnClose()
             }
 
             if appState.replacementSettings.enabled {
@@ -553,11 +586,23 @@ private struct FooterBarView: View {
         }
     }
 
-    // Settings gear turns orange when custom mode is selected but the endpoint
-    // isn't configured yet — the visual breadcrumb that used to live on the
-    // standalone Config footer button before it was folded into Settings.
+    // Custom mode selected but the endpoint isn't configured yet — surface
+    // as orange on the Model footer button, which is now where the user
+    // resolves the gap (the config UI lives inside that popover). Mirror
+    // the same warning when the *edit* model is Custom but its endpoint
+    // is unconfigured — same UI affordance, same fix path.
     private var needsCustomConfigAttention: Bool {
-        appState.transcriptionMode == .custom && !appState.customProviderSettings.isConfigured
+        let transcriptionNeedsConfig = appState.transcriptionMode == .custom
+            && !appState.customProviderSettings.isConfigured
+        let editNeedsConfig = !appState.editModeBehavior.isOff
+            && EditModeSettings.model == .custom
+            && !appState.customEditProviderSettings.isConfigured
+        return transcriptionNeedsConfig || editNeedsConfig
+    }
+
+    private var modelPickerColor: Color {
+        if needsCustomConfigAttention { return .orange }
+        return appState.transcriptionMode == .default ? .secondary : .accentColor
     }
 
     private var settingsIcon: String {
@@ -565,8 +610,7 @@ private struct FooterBarView: View {
     }
 
     private var settingsColor: Color {
-        if needsCustomConfigAttention { return .orange }
-        return launchManager.isEnabled ? .accentColor : .secondary
+        launchManager.isEnabled ? .accentColor : .secondary
     }
 }
 

@@ -2,12 +2,17 @@ import Foundation
 
 @MainActor
 final class CustomProvider: Sendable {
+    nonisolated static func normalizeEndpoint(_ input: String) -> String {
+        CustomEndpointNormalizer.normalize(input, canonicalPath: "/v1/audio/transcriptions")
+    }
+
     func transcribe(audioURL: URL, settings: CustomProviderSettings) async throws -> TranscriptionResult {
         guard settings.isConfigured else {
             throw CustomProviderError.notConfigured
         }
 
-        guard let url = URL(string: settings.endpointURL) else {
+        let normalized = Self.normalizeEndpoint(settings.endpointURL)
+        guard let url = URL(string: normalized) else {
             throw CustomProviderError.invalidEndpoint
         }
 
@@ -25,7 +30,14 @@ final class CustomProvider: Sendable {
 
         let body = buildMultipartBody(audioData: audioData, modelName: settings.modelName, boundary: boundary)
 
+        // Wall-clock latency for the upload + remote inference. Stored
+        // as `TranscriptionResult.duration` to match Parakeet/Whisper
+        // semantics — the audio-length value the OpenAI response
+        // returns is captured separately as `audioDuration` and used
+        // only for the segment-end annotation.
+        let startTime = Date()
         let (data, response) = try await URLSession.shared.upload(for: request, from: body)
+        let processingTime = Date().timeIntervalSince(startTime)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CustomProviderError.serverError(0, "Invalid response")
@@ -39,13 +51,13 @@ final class CustomProvider: Sendable {
         let decoded = try JSONDecoder().decode(OpenAITranscriptionResponse.self, from: data)
         let text = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let language = decoded.language ?? "en"
-        let duration = decoded.duration ?? 0
+        let audioDuration = decoded.duration ?? 0
 
         return TranscriptionResult(
             text: text,
-            segments: [TranscriptionSegment(start: 0, end: duration, text: text, words: nil)],
+            segments: [TranscriptionSegment(start: 0, end: audioDuration, text: text, words: nil)],
             language: language,
-            duration: duration,
+            duration: processingTime,
             model: settings.modelName
         )
     }

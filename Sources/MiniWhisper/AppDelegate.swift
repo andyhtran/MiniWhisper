@@ -70,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         withObservationTracking {
             _ = self.appState.recorder.state
             _ = self.appState.recorder.meterLevel
+            _ = self.appState.isEditModeProcessing
         } onChange: {
             Task { @MainActor [weak self] in
                 self?.updateIcon()
@@ -81,7 +82,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateIcon() {
         statusItem.button?.image = MenuBarIconRenderer.render(
             state: appState.recorder.state,
-            meterLevel: appState.recorder.meterLevel
+            meterLevel: appState.recorder.meterLevel,
+            isEditModeProcessing: appState.isEditModeProcessing
         )
     }
 
@@ -187,6 +189,18 @@ final class HotkeyDelegateImpl: HotkeyManagerDelegate {
     nonisolated func hotkeyDidCancelRecording() {
         Task { @MainActor in
             self.appState?.cancelRecording()
+        }
+    }
+
+    nonisolated func hotkeyDidToggleAutoCleanupRecording() {
+        Task { @MainActor in
+            self.appState?.toggleAutoCleanupRecording()
+        }
+    }
+
+    nonisolated func hotkeyDidEditSelection() {
+        Task { @MainActor in
+            self.appState?.editSelection()
         }
     }
 }

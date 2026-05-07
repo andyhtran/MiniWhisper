@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - History Popover
@@ -42,9 +43,9 @@ private struct HistoryPopoverRow: View {
 
     var body: some View {
         Group {
-            if let text = recording.transcription?.text {
+            if let copyTarget {
                 Button {
-                    appState.pasteboard.copy(text)
+                    appState.pasteboard.copy(copyTarget)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         copied = false
@@ -66,26 +67,45 @@ private struct HistoryPopoverRow: View {
         }
     }
 
+    /// Edit-mode entries copy the edited result (the thing the user
+    /// pasted); voice entries copy the transcription text.
+    private var copyTarget: String? {
+        recording.editMode?.editedResult ?? recording.transcription?.text
+    }
+
     private var rowContent: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(primaryText)
-                    .font(.system(size: 13))
-                    .lineLimit(2)
-                    .foregroundColor(recording.transcription != nil ? .primary : .secondary)
+                HStack(spacing: 6) {
+                    if recording.editMode != nil {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 11))
+                            .foregroundColor(.accentColor)
+                    } else if recording.cleanup != nil {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 11))
+                            .foregroundColor(.accentColor)
+                    }
+                    Text(primaryText)
+                        .font(.system(size: 13))
+                        .lineLimit(2)
+                        .foregroundColor(hasContent ? .primary : .secondary)
+                }
 
                 HStack(spacing: 4) {
                     Text(formatDate(recording.createdAt))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary.opacity(0.7))
 
-                    if recording.transcription != nil {
+                    if let metaSuffix {
                         Text("·")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary.opacity(0.4))
-                        Text(recording.configuration.voiceModel)
+                        Text(metaSuffix)
                             .font(.system(size: 10))
                             .foregroundColor(.secondary.opacity(0.5))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
             }
@@ -94,20 +114,6 @@ private struct HistoryPopoverRow: View {
 
             if recording.transcription != nil {
                 HStack(spacing: 6) {
-                    if recording.canRetranscribeAsNew && isHovering && !copied {
-                        Button {
-                            appState.retranscribeAsNew(recording)
-                        } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 12))
-                                .foregroundColor(isRetranscribeDisabled ? .secondary : .accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isRetranscribeDisabled)
-                        .help("Re-transcribe with current model")
-                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                    }
-
                     if copied {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
@@ -117,6 +123,9 @@ private struct HistoryPopoverRow: View {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
+
+                        rowActionsMenu
                             .transition(.opacity.combined(with: .scale(scale: 0.8)))
                     }
                 }
@@ -146,6 +155,9 @@ private struct HistoryPopoverRow: View {
     }
 
     private var primaryText: String {
+        if let edited = recording.editMode?.editedResult {
+            return edited
+        }
         if let text = recording.transcription?.text {
             return text
         }
@@ -153,6 +165,137 @@ private struct HistoryPopoverRow: View {
             return "Canceled recording"
         }
         return "No transcription"
+    }
+
+    private var hasContent: Bool {
+        recording.editMode != nil || recording.transcription != nil
+    }
+
+    /// Metadata suffix after the timestamp. Latency comes before the
+    /// model name everywhere it's surfaced so the user can scan how
+    /// long a given pass took before noticing which model ran it
+    /// (`Edit · 2.6s · Codex CLI · "instruction"`,
+    /// `Cleanup: 1.2s · Claude Code`). The friendly name swaps in for
+    /// the technical model identifier — full detail still lives in
+    /// metadata.json (reachable via the row's "Show metadata" action).
+    private var metaSuffix: String? {
+        if let editMode = recording.editMode {
+            var parts = ["Edit"]
+            if let editDuration = editMode.editDuration {
+                parts.append(formatEditDuration(editDuration))
+            }
+            parts.append(friendlyEditModelName(
+                backend: EditModeBackend(rawValue: editMode.backend),
+                model: editMode.backendModel))
+            if let instruction = recording.transcription?.text, !instruction.isEmpty {
+                parts.append("\u{201C}\(instruction)\u{201D}")
+            }
+            return parts.joined(separator: " · ")
+        }
+        if let transcription = recording.transcription {
+            var parts: [String] = []
+            if let cleanup = recording.cleanup {
+                // Voice model intentionally hidden on cleanup rows — the
+                // polish step is what cleanup users care about; full
+                // detail is in metadata.json.
+                let total = transcription.transcriptionDuration
+                    + (cleanup.cleanupDuration ?? 0)
+                if total > 0 {
+                    parts.append(formatEditDuration(total))
+                }
+                parts.append(friendlyEditModelName(
+                    backend: nil, model: cleanup.backendModel))
+            } else {
+                // Plain voice: latency before the transcription model,
+                // mirroring the edit/cleanup pattern.
+                if transcription.transcriptionDuration > 0 {
+                    parts.append(formatEditDuration(transcription.transcriptionDuration))
+                }
+                parts.append(friendlyVoiceModelName(
+                    provider: recording.configuration.provider,
+                    model: recording.configuration.voiceModel))
+            }
+            return parts.joined(separator: " · ")
+        }
+        return nil
+    }
+
+    /// New edit-mode entries carry an explicit backend tag — authoritative.
+    /// Legacy entries and cleanup entries (which never stored a backend)
+    /// fall back to a prefix sniff on the model string; unknown values
+    /// land on "Custom" since that's the only third option in the picker.
+    private func friendlyEditModelName(backend: EditModeBackend?, model: String) -> String {
+        if let backend {
+            switch backend {
+            case .claudeCli: return "Claude Code"
+            case .codexCli: return "Codex CLI"
+            case .customApi: return "Custom"
+            }
+        }
+        let lower = model.lowercased()
+        if lower.hasPrefix("claude") { return "Claude Code" }
+        if lower.hasPrefix("gpt") { return "Codex CLI" }
+        return "Custom"
+    }
+
+    /// Friendly transcription label. New recordings carry an explicit
+    /// `provider` tag (the `TranscriptionMode` raw value) — authoritative,
+    /// so a custom-endpoint Whisper model no longer reads as
+    /// "Multilingual". Legacy entries predating that field fall back to
+    /// a prefix sniff on the model string; in that fallback, custom
+    /// users whose model name starts with `whisper-` may still read as
+    /// "Multilingual" — accept that since metadata.json has the truth.
+    private func friendlyVoiceModelName(provider: String?, model: String) -> String {
+        if let provider, let mode = TranscriptionMode(rawValue: provider) {
+            switch mode {
+            case .default: return "Default"
+            case .multilingual: return "Multilingual"
+            case .custom: return "Custom"
+            }
+        }
+        let lower = model.lowercased()
+        if lower.hasPrefix("parakeet") { return "Default" }
+        if lower.hasPrefix("whisper") { return "Multilingual" }
+        return "Custom"
+    }
+
+    /// Hover-revealed overflow menu. Re-transcribe is conditional on
+    /// the audio still existing (the retention sweep can prune it);
+    /// "Show metadata" opens the recording's metadata.json directly so
+    /// the user can inspect the full technical identifiers that the
+    /// abbreviated UI labels collapse over; "Show in Finder" reveals
+    /// the storage folder for the rest of the artifacts (transcript.txt,
+    /// segments.json, audio.*).
+    private var rowActionsMenu: some View {
+        Menu {
+            if recording.canRetranscribeAsNew {
+                Button("Re-transcribe with current model") {
+                    appState.retranscribeAsNew(recording)
+                }
+                .disabled(isRetranscribeDisabled)
+            }
+            Button("Show metadata") {
+                let metadataURL = recording.storageDirectory
+                    .appendingPathComponent("metadata.json")
+                NSWorkspace.shared.open(metadataURL)
+            }
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([recording.storageDirectory])
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More actions")
+    }
+
+    private func formatEditDuration(_ seconds: TimeInterval) -> String {
+        let value = seconds.formatted(.number.precision(.fractionLength(1)))
+        return "\(value)s"
     }
 
     private var isReTranscribeDisabled: Bool {

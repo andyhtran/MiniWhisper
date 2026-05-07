@@ -6,6 +6,8 @@ struct FormatPopoverView: View {
     @State private var capitalization = FormattingSettings.capitalization
     @State private var autoParagraph = FormattingSettings.autoParagraph
     @State private var dropTrailingPunctuation = FormattingSettings.dropTrailingPunctuation
+    @State private var spokenSymbolsEnabled = SpokenSymbolsSettings.enabled
+    @State private var appendTrailingSpace = FormattingSettings.appendTrailingSpace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -73,6 +75,44 @@ struct FormatPopoverView: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
             }
+
+            HStack(spacing: 4) {
+                Text("Spoken symbols")
+                    .font(.system(size: 13))
+                InfoBadge(text: "Convert spoken phrases like 'open bracket' into symbols")
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { spokenSymbolsEnabled },
+                        set: {
+                            spokenSymbolsEnabled = $0
+                            SpokenSymbolsSettings.enabled = $0
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
+
+            HStack(spacing: 4) {
+                Text("Trailing space")
+                    .font(.system(size: 13))
+                InfoBadge(text: "Append a space after each pasted transcription so you can keep typing without pressing space first.")
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { appendTrailingSpace },
+                        set: {
+                            appendTrailingSpace = $0
+                            FormattingSettings.appendTrailingSpace = $0
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
         }
         .padding(12)
         .frame(width: 280)
@@ -80,6 +120,8 @@ struct FormatPopoverView: View {
             capitalization = FormattingSettings.capitalization
             autoParagraph = FormattingSettings.autoParagraph
             dropTrailingPunctuation = FormattingSettings.dropTrailingPunctuation
+            spokenSymbolsEnabled = SpokenSymbolsSettings.enabled
+            appendTrailingSpace = FormattingSettings.appendTrailingSpace
         }
     }
 }

@@ -25,6 +25,12 @@ final class ToastWindowController: Sendable {
     }
 
     func showError(title: String, message: String? = nil) {
+        // Single choke point for the user's "stop showing me errors"
+        // setting — every error toast in the app funnels through here,
+        // so the gate lives here too. Warning toasts (recording-too-long
+        // etc.) intentionally stay unaffected since the user scoped the
+        // preference to errors only.
+        guard GeneralSettings.errorToastsEnabled else { return }
         show(ToastMessage(type: .error, title: title, message: message))
     }
 
