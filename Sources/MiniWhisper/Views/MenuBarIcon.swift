@@ -12,7 +12,15 @@ enum MenuBarIconRenderer {
     private static let sideScale: CGFloat = 0.65
     private static let minFraction: CGFloat = 0.2
 
-    static func render(state: RecordingState, meterLevel: Double) -> NSImage {
+    static func render(
+        state: RecordingState, meterLevel: Double, isEditModeProcessing: Bool = false
+    ) -> NSImage {
+        // Edit-mode AI call wins over the generic processing icon — the
+        // user pressed a different shortcut for a different operation, so
+        // the menu bar should reflect that's what's running.
+        if isEditModeProcessing {
+            return renderSymbol("wand.and.stars")
+        }
         switch state {
         case .recording:
             return renderMeterBars(level: meterLevel)

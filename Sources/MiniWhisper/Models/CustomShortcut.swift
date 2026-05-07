@@ -158,6 +158,8 @@ struct CustomShortcut: Codable, Equatable, Hashable {
 enum CustomShortcutName: String, Codable, CaseIterable {
     case toggleRecording
     case cancelRecording
+    case autoCleanupRecording
+    case editSelection
 }
 
 // MARK: - Shortcut Storage
@@ -217,6 +219,8 @@ final class CustomShortcutStorage {
         [
             .toggleRecording: CustomShortcut(keyCode: UInt16(kVK_ANSI_W), option: true),
             .cancelRecording: CustomShortcut(keyCode: UInt16(kVK_Escape)),  // Escape
+            .autoCleanupRecording: CustomShortcut(keyCode: UInt16(kVK_ANSI_R), option: true),
+            .editSelection: CustomShortcut(keyCode: UInt16(kVK_ANSI_E), option: true),
         ]
     }
 }

@@ -89,12 +89,19 @@ extension AppState {
         let recordingId = currentRecordingId ?? Recording.generateId()
         currentRecordingId = nil
 
+        // Snapshot + clear the cleanup flag before running transcribe.
+        // Whether the recording was started via the Auto-Cleanup shortcut
+        // is fixed at start time; stopping doesn't change the intent.
+        let applyCleanup = cleanupRequestedForCurrentRecording
+        cleanupRequestedForCurrentRecording = false
+
         await transcribe(
             audioURL: audioURL,
             recordingId: recordingId,
             duration: duration,
             sampleRate: sampleRate,
-            inputDeviceName: inputDeviceName
+            inputDeviceName: inputDeviceName,
+            applyCleanup: applyCleanup
         )
     }
 
@@ -105,6 +112,7 @@ extension AppState {
 
         guard recorder.state.isRecording else { return }
 
+        cleanupRequestedForCurrentRecording = false
         stopDurationChecks()
         onRecordingEnded?()
 
@@ -135,7 +143,8 @@ extension AppState {
             transcription: nil,
             configuration: RecordingConfiguration(
                 voiceModel: transcriptionMode.modelDisplayName,
-                language: "en"
+                language: "en",
+                provider: transcriptionMode.rawValue
             ),
             status: .cancelled
         )

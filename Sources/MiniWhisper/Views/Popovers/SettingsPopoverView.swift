@@ -3,14 +3,15 @@ import SwiftUI
 struct SettingsPopoverView: View {
     @Environment(AppState.self) private var appState
     @StateObject private var launchManager = LaunchAtLoginManager.shared
-    @State private var spokenSymbolsEnabled = SpokenSymbolsSettings.enabled
+    @State private var editModeBehavior = EditModeSettings.behavior
+    @State private var errorToastsEnabled = GeneralSettings.errorToastsEnabled
 
     var body: some View {
         @Bindable var appState = appState
 
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Launch at Login")
+                Text("General")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
@@ -31,29 +32,19 @@ struct SettingsPopoverView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
                 }
-            }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Spoken Symbols")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                HStack {
-                    Text("Convert spoken phrases like 'open bracket' into symbols")
+                HStack(spacing: 4) {
+                    Text("Show error notifications")
                         .font(.system(size: 13))
-                        .fixedSize(horizontal: false, vertical: true)
+                    InfoBadge(text: "Show a toast when something fails — recording errors, transcription failures, etc. Turn off if you'd rather the app stay quiet on errors.")
                     Spacer()
                     Toggle(
                         "",
                         isOn: Binding(
-                            get: { spokenSymbolsEnabled },
+                            get: { errorToastsEnabled },
                             set: {
-                                spokenSymbolsEnabled = $0
-                                SpokenSymbolsSettings.enabled = $0
+                                errorToastsEnabled = $0
+                                GeneralSettings.errorToastsEnabled = $0
                             }
                         )
                     )
@@ -64,17 +55,43 @@ struct SettingsPopoverView: View {
 
             Divider()
 
+            // AI editing mode leads — chunkier picker before the toggles.
             VStack(alignment: .leading, spacing: 10) {
-                Text("Replacements")
+                Text("Editing")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.5)
 
-                HStack {
-                    Text("Enable find-and-replace rules after transcription")
+                HStack(spacing: 4) {
+                    Text("AI editing mode")
                         .font(.system(size: 13))
-                        .fixedSize(horizontal: false, vertical: true)
+                    InfoBadge(text: "Voice Edit: press the edit shortcut, speak an instruction (\"make this formal\"), press again to apply it to selected text. Auto-Cleanup: every recording gets an LLM polish pass before pasting. Pick the edit model from the Model menu.")
+                    Spacer()
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: { editModeBehavior },
+                            set: {
+                                editModeBehavior = $0
+                                EditModeSettings.behavior = $0
+                                appState.editModeBehavior = $0
+                            }
+                        )
+                    ) {
+                        ForEach(EditModeBehavior.allCases, id: \.self) { behavior in
+                            Text(behavior.displayName).tag(behavior)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+
+                HStack(spacing: 4) {
+                    Text("Enable replacements")
+                        .font(.system(size: 13))
+                    InfoBadge(text: "Apply find-and-replace rules to every transcription")
                     Spacer()
                     Toggle("", isOn: $appState.replacementSettings.enabled)
                         .toggleStyle(.switch)
@@ -86,254 +103,32 @@ struct SettingsPopoverView: View {
                 }
             }
 
-            // Custom Endpoint only applies to the Custom transcription mode.
-            // Local models (Parakeet / Whisper) run on-device and don't
-            // need URL/key/model config or silence trimming, so the whole
-            // section is hidden for them.
-            if appState.transcriptionMode == .custom {
-                Divider()
-                CustomEndpointSection()
-            }
-
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Recordings")
+                Text("Files")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.5)
 
-                OpenRecordingsFolderRow()
+                OpenMiniWhisperFolderRow()
+
+                if editModeBehavior.autoCleanupEnabled {
+                    CleanupPromptRow()
+                }
             }
         }
         .padding(12)
         .frame(width: 300)
-        .onChange(of: appState.customProviderSettings) {
-            appState.customProviderSettings.save()
-        }
         .onChange(of: appState.replacementSettings) {
             appState.replacementSettings.save()
         }
         .onAppear {
             launchManager.refresh()
-            spokenSymbolsEnabled = SpokenSymbolsSettings.enabled
+            editModeBehavior = EditModeSettings.behavior
+            errorToastsEnabled = GeneralSettings.errorToastsEnabled
         }
-    }
-}
-
-// MARK: - Custom Endpoint Section
-
-// Edit-gated section: fields render as selectable read-only text by default
-// and only swap in real TextFields while `isEditing` is true. This keeps
-// accidental focus off text fields (select-all-on-focus can destroy values)
-// and shrinks the window in which a field editor can be first responder when
-// the user switches popovers — reducing the crash class documented in
-// PopoverResponderReset.swift.
-private struct CustomEndpointSection: View {
-    @Environment(AppState.self) private var appState
-
-    @State private var isEditing = false
-    @State private var draftURL = ""
-    @State private var draftAPIKey = ""
-    @State private var draftModel = ""
-    @State private var vadEnabled = VADSettings.enabled
-
-    @FocusState private var focusedField: Field?
-
-    private enum Field: Hashable {
-        case url, apiKey, model
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-
-            fieldRow(label: "Endpoint URL") {
-                if isEditing {
-                    TextField(
-                        "https://api.example.com/v1/audio/transcriptions",
-                        text: $draftURL
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
-                    .focused($focusedField, equals: .url)
-                    .onSubmit(confirm)
-                } else {
-                    ReadOnlyFieldDisplay(
-                        text: appState.customProviderSettings.endpointURL,
-                        placeholder: "Not set"
-                    )
-                }
-            }
-
-            fieldRow(label: "API Key (optional)") {
-                if isEditing {
-                    SecureField("sk-...", text: $draftAPIKey)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                        .focused($focusedField, equals: .apiKey)
-                        .onSubmit(confirm)
-                } else {
-                    ReadOnlyFieldDisplay(
-                        text: maskedAPIKey(appState.customProviderSettings.apiKey),
-                        placeholder: "None",
-                        selectable: false
-                    )
-                }
-            }
-
-            fieldRow(label: "Model Name") {
-                if isEditing {
-                    TextField("whisper-large-v3", text: $draftModel)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                        .focused($focusedField, equals: .model)
-                        .onSubmit(confirm)
-                } else {
-                    ReadOnlyFieldDisplay(
-                        text: appState.customProviderSettings.modelName,
-                        placeholder: "Not set"
-                    )
-                }
-            }
-
-            HStack {
-                Text("Trim long silences")
-                    .font(.system(size: 13))
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { vadEnabled },
-                        set: {
-                            vadEnabled = $0
-                            VADSettings.enabled = $0
-                        }
-                    )
-                )
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
-        }
-        .onAppear { vadEnabled = VADSettings.enabled }
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Custom Endpoint")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.5)
-            Spacer()
-            if isEditing {
-                HStack(spacing: 6) {
-                    Button(action: cancel) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Cancel")
-                    .keyboardShortcut(.cancelAction)
-
-                    Button(action: confirm) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Save")
-                    .keyboardShortcut(.defaultAction)
-                }
-            } else {
-                Button(action: beginEditing) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Edit")
-            }
-        }
-    }
-
-    private func fieldRow<Content: View>(
-        label: String, @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
-            content()
-        }
-    }
-
-    private func beginEditing() {
-        draftURL = appState.customProviderSettings.endpointURL
-        draftAPIKey = appState.customProviderSettings.apiKey
-        draftModel = appState.customProviderSettings.modelName
-        isEditing = true
-        // Defer to let SwiftUI mount the TextFields before focus attaches.
-        DispatchQueue.main.async {
-            focusedField = .url
-        }
-    }
-
-    private func confirm() {
-        // Assign a new struct in one shot so @Observable / onChange fire once.
-        var updated = appState.customProviderSettings
-        updated.endpointURL = draftURL
-        updated.apiKey = draftAPIKey
-        updated.modelName = draftModel
-        appState.customProviderSettings = updated
-        focusedField = nil
-        isEditing = false
-    }
-
-    private func cancel() {
-        focusedField = nil
-        isEditing = false
-    }
-
-    private func maskedAPIKey(_ key: String) -> String {
-        key.isEmpty ? "" : String(repeating: "•", count: min(key.count, 32))
-    }
-}
-
-private struct ReadOnlyFieldDisplay: View {
-    let text: String
-    let placeholder: String
-    var selectable: Bool = true
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Group {
-                if text.isEmpty {
-                    Text(placeholder).foregroundStyle(.tertiary)
-                } else if selectable {
-                    Text(text).textSelection(.enabled)
-                } else {
-                    Text(text).foregroundStyle(.secondary)
-                }
-            }
-            .font(.system(size: 12))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color(nsColor: .textBackgroundColor).opacity(0.35))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 5)
-                .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
-        )
     }
 }
 
@@ -352,12 +147,11 @@ private struct ClaudeSkillRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Claude Code skill")
-                        .font(.system(size: 13))
-                    Text("Allow Claude to add replacements automatically")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 4) {
+                        Text("Claude Code skill")
+                            .font(.system(size: 13))
+                        InfoBadge(text: "Allow Claude to add replacements automatically using /mw-replace")
+                    }
                     subtitle
                 }
                 Spacer()
@@ -463,7 +257,7 @@ private struct ClaudeSkillRow: View {
     }
 }
 
-private struct OpenRecordingsFolderRow: View {
+private struct OpenMiniWhisperFolderRow: View {
     @State private var isHovering = false
 
     var body: some View {
@@ -478,7 +272,7 @@ private struct OpenRecordingsFolderRow: View {
                     .foregroundColor(.secondary)
                     .frame(width: 20)
 
-                Text("Open Recordings Folder")
+                Text("Open MiniWhisper Folder")
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
 
@@ -501,6 +295,104 @@ private struct OpenRecordingsFolderRow: View {
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovering = hovering
             }
+        }
+    }
+}
+
+// MARK: - Cleanup Prompt Row
+//
+// Edit + Reset affordances for the cleanup-pass system prompt. Only
+// rendered when the AI editing mode includes auto-cleanup (caller gates
+// visibility), so the row is contextually relevant when shown. Reset
+// hides itself further when the on-disk prompt matches the bundled
+// default — no point offering Reset when there's nothing to reset to.
+
+private struct CleanupPromptRow: View {
+    @Environment(AppState.self) private var appState
+    @State private var isHovering = false
+    @State private var hasCustomPrompt = CleanupPromptStore.hasCustomPrompt
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: edit) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .frame(width: 20)
+
+                    Text("Edit cleanup prompt")
+                        .font(.system(size: 13))
+                        .foregroundColor(.primary)
+
+                    Spacer()
+
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            isHovering
+                                ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isHovering = hovering
+                }
+            }
+
+            if hasCustomPrompt {
+                HStack {
+                    Spacer()
+                    Button("Reset to default", action: confirmReset)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.accentColor)
+                        .font(.system(size: 11))
+                }
+            }
+        }
+        .onAppear { hasCustomPrompt = CleanupPromptStore.hasCustomPrompt }
+    }
+
+    private func edit() {
+        do {
+            try CleanupPromptStore.seedIfMissing()
+            NSWorkspace.shared.open(CleanupPromptStore.fileURL)
+            // Re-check on next appear in case the user edited and saved
+            // — Reset visibility tracks the on-disk diff.
+            hasCustomPrompt = CleanupPromptStore.hasCustomPrompt
+        } catch {
+            appState.toast.showError(
+                title: "Couldn't Open Prompt File",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func confirmReset() {
+        let alert = NSAlert()
+        alert.messageText = "Reset cleanup prompt?"
+        alert.informativeText =
+            "This overwrites your edits to cleanup-prompt.md with the bundled default. This can't be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try CleanupPromptStore.resetToDefault()
+            hasCustomPrompt = false
+        } catch {
+            appState.toast.showError(
+                title: "Reset Failed",
+                message: error.localizedDescription
+            )
         }
     }
 }

@@ -1,21 +1,94 @@
 import Foundation
+import os.log
+
+private let log = Logger(subsystem: Logger.subsystem, category: "Transcription")
 
 extension AppState {
     // MARK: - Transcription
 
-    /// Applies replacements + user-selected formatting rules to raw model
-    /// output. Single entry point so every transcription path (new recording,
-    /// re-transcribe, re-transcribe-as-new) produces byte-identical results.
-    private func applyPostProcessing(to text: String) -> String {
+    /// Runs the auto-cleanup LLM pass on a raw transcript when the
+    /// caller passes `applyCleanup: true` (i.e. the recording was
+    /// started via the Auto-Cleanup shortcut). Returns the (possibly
+    /// cleaned) text + history metadata for the run, or `(rawText, nil)`
+    /// when the caller opts out, the transcript is empty, or the call
+    /// fails. Failures are intentionally silent — the user gets the raw
+    /// transcript pasted instead of being blocked on a model error.
+    func applyAutoCleanup(
+        rawText: String, applyCleanup: Bool
+    ) async -> (text: String, cleanup: RecordingCleanup?) {
+        guard applyCleanup, !rawText.isEmpty else {
+            return (rawText, nil)
+        }
+
+        let model = EditModeSettings.model
+        let start = Date()
+
+        // Surface the LLM phase as "Editing…" in the menu bar so the icon
+        // shifts off `waveform.badge.ellipsis` (transcribing) onto
+        // `wand.and.stars` (editing) for the duration of the cleanup call.
+        isEditModeProcessing = true
+        editModeProcessingCharCount = rawText.count
+        defer {
+            isEditModeProcessing = false
+            editModeProcessingCharCount = 0
+        }
+
+        do {
+            let cleaned: String
+            switch model {
+            case .custom:
+                // Skip the call entirely if the user never wired up the
+                // endpoint — without config we'd just throw and fall
+                // back, which silently drops the user's cleanup intent.
+                guard customEditProviderSettings.isConfigured else {
+                    return (rawText, nil)
+                }
+                cleaned = try await customEditProvider.cleanupTranscript(
+                    rawText, settings: customEditProviderSettings)
+            case .gpt5Mini, .claudeHaiku45:
+                cleaned = try await editModeProvider.cleanupTranscript(
+                    rawText, model: model)
+            }
+            let duration = Date().timeIntervalSince(start)
+            let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return (rawText, nil) }
+
+            let backendModel: String = model == .custom
+                ? customEditProviderSettings.modelName
+                : model.rawValue
+            let cleanup = RecordingCleanup(
+                rawText: rawText,
+                cleanedText: trimmed,
+                backendModel: backendModel,
+                cleanupDuration: duration
+            )
+            return (trimmed, cleanup)
+        } catch {
+            // Silent UX is intentional — fall back to the raw transcript so
+            // the user isn't blocked. Log so device logs still capture the
+            // failure for debugging.
+            log.error("Auto-cleanup failed (\(model.rawValue, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+            return (rawText, nil)
+        }
+    }
+
+    /// Builds the formatter options from the current user settings.
+    /// Snapshotted into a local so replacements + formatting see the
+    /// same config across both halves of the pipeline.
+    private func currentFormatterOptions() -> TranscriptionFormatter.Options {
         let rules = replacementSettings.enabled ? replacementSettings.enabledRules : []
-        let options = TranscriptionFormatter.Options(
+        return TranscriptionFormatter.Options(
             replacementRules: rules,
             capitalization: FormattingSettings.capitalization,
             autoParagraph: FormattingSettings.autoParagraph,
             dropTrailingPunctuation: FormattingSettings.dropTrailingPunctuation,
-            spokenSymbolsEnabled: SpokenSymbolsSettings.enabled
+            spokenSymbolsEnabled: SpokenSymbolsSettings.enabled,
+            appendTrailingSpace: FormattingSettings.appendTrailingSpace
         )
-        return TranscriptionFormatter.format(text, options: options)
+    }
+
+    private func applyPostProcessing(to text: String) -> String {
+        TranscriptionFormatter.format(text, options: currentFormatterOptions())
     }
 
     /// Single choke point for VAD preprocessing: all three transcription entry
@@ -43,7 +116,7 @@ extension AppState {
 
     func transcribe(
         audioURL: URL, recordingId: String, duration: TimeInterval, sampleRate: Double,
-        inputDeviceName: String
+        inputDeviceName: String, applyCleanup: Bool
     ) async {
         let storageDir = audioURL.deletingLastPathComponent()
         let (uploadURL, vadApplied) = await preprocessForUpload(
@@ -76,7 +149,19 @@ extension AppState {
                 return
             }
 
-            let finalText = applyPostProcessing(to: result.text)
+            // Replacements → LLM cleanup → formatting. Replacements run
+            // first so the user's explicit find/replace rules shape what
+            // the LLM sees (e.g. `claw code` → `claude code` before the
+            // model rewrites the sentence around it). Cosmetic formatting
+            // runs after the LLM so capitalization/paragraph/trailing-
+            // punctuation pick up its polish too.
+            let options = currentFormatterOptions()
+            let withReplacements = TranscriptionFormatter.applyReplacements(
+                to: result.text, options: options)
+            let cleanupResult = await applyAutoCleanup(
+                rawText: withReplacements, applyCleanup: applyCleanup)
+            let finalText = TranscriptionFormatter.applyFormatting(
+                to: cleanupResult.text, options: options)
 
             pasteboard.copyAndPaste(finalText)
 
@@ -104,9 +189,11 @@ extension AppState {
                 ),
                 configuration: RecordingConfiguration(
                     voiceModel: result.model,
-                    language: result.language
+                    language: result.language,
+                    provider: transcriptionMode.rawValue
                 ),
-                status: .completed
+                status: .completed,
+                cleanup: cleanupResult.cleanup
             )
 
             try recordingStore.saveWithExistingAudio(recording)
@@ -136,7 +223,8 @@ extension AppState {
                 transcription: nil,
                 configuration: RecordingConfiguration(
                     voiceModel: transcriptionMode.modelDisplayName,
-                    language: "en"
+                    language: "en",
+                    provider: transcriptionMode.rawValue
                 ),
                 status: .failed
             )
@@ -146,11 +234,26 @@ extension AppState {
     }
 
     func retranscribeCancelledRecording(_ recording: Recording) async {
+        // Source audio may have been compressed to CAF by the retention
+        // sweep — decode it to a temp WAV so VAD + the providers (which
+        // expect WAV) keep working unchanged.
+        let prepared: (url: URL, isTemporary: Bool)
+        do {
+            prepared = try await ensureWAVForTranscription(recording.audioURL)
+        } catch {
+            recorder.reset()
+            toast.showError(
+                title: "Re-transcription Failed",
+                message: "Could not decode audio: \(error.localizedDescription)")
+            return
+        }
+        defer { cleanupTempAudio(prepared.url, isTemporary: prepared.isTemporary) }
+
         // Re-run VAD on the current raw WAV so the global toggle is the
         // source of truth. Overwrites any stale audio-vad.wav from the prior
         // run. No-op in the local modes — see `preprocessForUpload`.
         let (uploadURL, vadApplied) = await preprocessForUpload(
-            audioURL: recording.audioURL,
+            audioURL: prepared.url,
             duration: recording.recording.duration,
             storageDir: recording.storageDirectory
         )
@@ -176,7 +279,12 @@ extension AppState {
                 return
             }
 
-            let finalText = applyPostProcessing(to: result.text)
+            // Re-transcribed recordings don't carry the cleanup intent
+            // forward — the user can re-record with the Auto-Cleanup
+            // shortcut if they want a polished pass.
+            let cleanupResult = await applyAutoCleanup(
+                rawText: result.text, applyCleanup: false)
+            let finalText = applyPostProcessing(to: cleanupResult.text)
 
             pasteboard.copyAndPaste(finalText)
 
@@ -203,9 +311,11 @@ extension AppState {
                 ),
                 configuration: RecordingConfiguration(
                     voiceModel: result.model,
-                    language: result.language
+                    language: result.language,
+                    provider: transcriptionMode.rawValue
                 ),
-                status: .completed
+                status: .completed,
+                cleanup: cleanupResult.cleanup
             )
 
             try recordingStore.saveWithExistingAudio(updatedRecording)
@@ -227,11 +337,14 @@ extension AppState {
     func retranscribeAsNewEntry(from source: Recording) async {
         let newId = Recording.generateId()
         let newDir = Recording.baseDirectory.appendingPathComponent(newId)
-        let newAudioURL = newDir.appendingPathComponent("audio.wav")
+        // Preserve the source's audio format (wav or caf) so the hard-link
+        // metadata + on-disk extension stay in sync.
+        let sourceFileName = source.audioFileName ?? "audio.wav"
+        let newAudioURL = newDir.appendingPathComponent(sourceFileName)
 
         do {
             try FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
-            // Hard-link avoids doubling disk usage; if one entry's WAV is
+            // Hard-link avoids doubling disk usage; if one entry's audio is
             // retention-cleaned the other still works independently.
             try FileManager.default.linkItem(at: source.audioURL, to: newAudioURL)
         } catch {
@@ -242,8 +355,22 @@ extension AppState {
             return
         }
 
+        // If the source had been compressed, decode the hard-linked CAF
+        // to a temp WAV before VAD + the providers see it.
+        let prepared: (url: URL, isTemporary: Bool)
+        do {
+            prepared = try await ensureWAVForTranscription(newAudioURL)
+        } catch {
+            recorder.reset()
+            toast.showError(
+                title: "Re-transcription Failed",
+                message: "Could not decode audio: \(error.localizedDescription)")
+            return
+        }
+        defer { cleanupTempAudio(prepared.url, isTemporary: prepared.isTemporary) }
+
         let (uploadURL, vadApplied) = await preprocessForUpload(
-            audioURL: newAudioURL,
+            audioURL: prepared.url,
             duration: source.recording.duration,
             storageDir: newDir
         )
@@ -294,9 +421,11 @@ extension AppState {
                 ),
                 configuration: RecordingConfiguration(
                     voiceModel: result.model,
-                    language: result.language
+                    language: result.language,
+                    provider: transcriptionMode.rawValue
                 ),
-                status: .completed
+                status: .completed,
+                audioFileName: source.audioFileName  // mirror source's wav/caf choice
             )
 
             try recordingStore.saveWithExistingAudio(newRecording)
@@ -310,5 +439,26 @@ extension AppState {
             recorder.reset()
             toast.showError(title: "Re-transcription Failed", message: error.localizedDescription)
         }
+    }
+
+    /// Returns a WAV URL ready for VAD + transcription. WAV inputs pass
+    /// through; CAF inputs (recordings compressed by the retention sweep)
+    /// are decoded to a temp WAV off the main actor. Caller is
+    /// responsible for `cleanupTempAudio` after use.
+    func ensureWAVForTranscription(_ source: URL) async throws -> (url: URL, isTemporary: Bool) {
+        if source.pathExtension.lowercased() == "wav" {
+            return (source, false)
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("decode_\(UUID().uuidString).wav")
+            try AudioDecoder.decodeToWAV(inputURL: source, outputURL: tempURL)
+            return (tempURL, true)
+        }.value
+    }
+
+    func cleanupTempAudio(_ url: URL, isTemporary: Bool) {
+        guard isTemporary else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }

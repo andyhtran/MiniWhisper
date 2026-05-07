@@ -120,7 +120,8 @@ struct SpokenSymbolsTests {
             capitalization: .off,
             autoParagraph: false,
             dropTrailingPunctuation: false,
-            spokenSymbolsEnabled: true
+            spokenSymbolsEnabled: true,
+            appendTrailingSpace: false
         )
         #expect(
             TranscriptionFormatter.format("use the dot env file", options: options)
@@ -136,7 +137,8 @@ struct SpokenSymbolsTests {
             capitalization: .off,
             autoParagraph: false,
             dropTrailingPunctuation: false,
-            spokenSymbolsEnabled: false
+            spokenSymbolsEnabled: false,
+            appendTrailingSpace: false
         )
         #expect(TranscriptionFormatter.format("dot env", options: options) == "dot env")
     }
