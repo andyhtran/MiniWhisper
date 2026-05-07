@@ -8,8 +8,20 @@ final class RecordingStore: Sendable {
 
     private let fileManager = FileManager.default
 
-    private let maxRecordings = 50
-    private let wavRetentionInterval: TimeInterval = 15 * 60  // 15 minutes
+    /// Cap on retained metadata + transcript entries. Each metadata blob
+    /// is a few KB, so 500 ≈ a few MB total — cheap headroom for the
+    /// "look back at last week's transcripts" use case.
+    private let maxRecordings = 500
+
+    /// After this many seconds we compress `audio.wav` to `audio.caf`
+    /// (Opus, ~12× smaller) and drop the WAV. Re-transcribe paths use
+    /// the WAV directly when present, otherwise decode CAF on the fly.
+    private let wavRetentionInterval: TimeInterval = 30 * 60  // 30 minutes
+
+    /// After this many seconds since `createdAt` we drop the audio file
+    /// entirely (whether WAV or CAF). Metadata + transcript stay until
+    /// pruned by `maxRecordings`.
+    private let audioRetentionInterval: TimeInterval = 48 * 60 * 60  // 48 hours
 
     init() {
         ensureDirectoryExists()
@@ -89,6 +101,8 @@ final class RecordingStore: Sendable {
     // MARK: - Retention
 
     func performRetention() {
+        // Pass 1 — count prune. Drop the entire directory (metadata,
+        // transcript, audio) for entries beyond the cap.
         if recordings.count > maxRecordings {
             let excess = Array(recordings[maxRecordings...])
             for recording in excess {
@@ -96,17 +110,108 @@ final class RecordingStore: Sendable {
             }
         }
 
-        // Clean up old WAV files (keep metadata/transcript). The VAD audit
-        // artifact follows the same 15-minute window as the raw WAV.
-        let cutoff = Date().addingTimeInterval(-wavRetentionInterval)
+        let now = Date()
+        let wavCutoff = now.addingTimeInterval(-wavRetentionInterval)
+        let audioCutoff = now.addingTimeInterval(-audioRetentionInterval)
+
+        // Pass 2 — drop expired audio (whether WAV or CAF) for anything
+        // past the 48h audio retention window. Metadata stays.
         for recording in recordings {
-            guard recording.createdAt < cutoff else { continue }
+            guard recording.createdAt < audioCutoff else { continue }
             if recording.hasAudioFile {
                 try? fileManager.removeItem(at: recording.audioURL)
             }
             if recording.hasVADAudioFile {
                 try? fileManager.removeItem(at: recording.vadAudioURL)
             }
+        }
+
+        // Pass 3 — collect WAVs older than the WAV window and compress
+        // them to CAF off the main actor. Compression is slow on long
+        // recordings (AVAudioConverter is sync, blocks the calling
+        // thread) so we batch and run detached.
+        let toCompress = recordings.filter {
+            $0.createdAt < wavCutoff
+                && $0.createdAt >= audioCutoff
+                && $0.isAudioLossless
+                && $0.hasAudioFile
+        }
+
+        // VAD audit artifact follows the WAV — once we've compressed the
+        // source, the audit copy outlives its usefulness too. Drop here
+        // to keep the WAV-window semantics consistent.
+        for recording in toCompress {
+            if recording.hasVADAudioFile {
+                try? fileManager.removeItem(at: recording.vadAudioURL)
+            }
+        }
+
+        if toCompress.isEmpty { return }
+        scheduleCompression(of: toCompress)
+    }
+
+    private func scheduleCompression(of pending: [Recording]) {
+        // Snapshot the URLs / IDs we need into a Sendable shape before
+        // jumping off the main actor. Compression is purely file IO so
+        // it doesn't touch any of the actor's mutable state directly.
+        let jobs = pending.map { rec in
+            CompressionJob(
+                id: rec.id,
+                wavURL: rec.audioURL,
+                cafURL: rec.compressedAudioURL
+            )
+        }
+
+        Task.detached(priority: .background) { [weak self] in
+            for job in jobs {
+                let result = Self.compressOne(job)
+                if case .success = result {
+                    await self?.markCompressed(id: job.id)
+                }
+            }
+        }
+    }
+
+    /// Re-reads the in-memory recording, flips its `audioFileName` to
+    /// `audio.caf`, and rewrites metadata.json. Runs back on the main
+    /// actor because `recordings` is `@Observable`-tracked.
+    private func markCompressed(id: String) {
+        guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        recordings[index].audioFileName = "audio.caf"
+        try? saveMetadata(recordings[index])
+    }
+
+    private struct CompressionJob: Sendable {
+        let id: String
+        let wavURL: URL
+        let cafURL: URL
+    }
+
+    /// Encodes the WAV to a temp CAF, atomically moves it into place,
+    /// then deletes the original WAV. Failures leave the WAV untouched
+    /// so the next retention sweep can retry. `nonisolated` because it
+    /// runs on a detached background task and only touches file IO.
+    nonisolated private static func compressOne(_ job: CompressionJob) -> Result<Void, Error> {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: job.wavURL.path) else {
+            return .failure(NSError(domain: "RecordingStore", code: 100))
+        }
+
+        let tempURL = job.cafURL.deletingLastPathComponent()
+            .appendingPathComponent("audio.caf.tmp")
+        try? fm.removeItem(at: tempURL)
+
+        do {
+            try OpusEncoder.encode(inputURL: job.wavURL, outputURL: tempURL)
+            if fm.fileExists(atPath: job.cafURL.path) {
+                try fm.removeItem(at: job.cafURL)
+            }
+            try fm.moveItem(at: tempURL, to: job.cafURL)
+            try fm.removeItem(at: job.wavURL)
+            return .success(())
+        } catch {
+            try? fm.removeItem(at: tempURL)
+            return .failure(error)
         }
     }
 

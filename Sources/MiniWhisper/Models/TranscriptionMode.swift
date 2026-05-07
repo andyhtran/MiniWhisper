@@ -37,6 +37,7 @@ struct TranscriptionModeStorage: Sendable {
 struct CustomProviderSettings: Codable, Equatable, Sendable {
     var endpointURL: String
     var apiKey: String
+    /// Transcription (speech-to-text) model name, e.g. `whisper-large-v3`.
     var modelName: String
 
     var isConfigured: Bool {

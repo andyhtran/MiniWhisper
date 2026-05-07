@@ -13,6 +13,7 @@ enum FormattingSettings {
         static let capitalization = "FormattingCapitalizationStyle"
         static let autoParagraph = "FormattingAutoParagraph"
         static let dropTrailingPunctuation = "FormattingDropTrailingPunctuation"
+        static let appendTrailingSpace = "FormattingAppendTrailingSpace"
         // Migration marker: the first read on a pristine install writes the
         // defaults so subsequent `bool(forKey:)` calls return the real value
         // rather than `false` (UserDefaults' zero-value for a missing bool).
@@ -44,6 +45,16 @@ enum FormattingSettings {
             return UserDefaults.standard.bool(forKey: Keys.dropTrailingPunctuation)
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.dropTrailingPunctuation) }
+    }
+
+    /// Appends a single space to the transcription before paste so the
+    /// user can immediately keep typing. Defaults to on for both fresh
+    /// installs and existing ones predating this knob (the latter already
+    /// have `defaultsSeeded` set, so the presence check is what reaches
+    /// them rather than `seedDefaultsIfNeeded`).
+    static var appendTrailingSpace: Bool {
+        get { UserDefaults.standard.defaultsToTrue(forKey: Keys.appendTrailingSpace) }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.appendTrailingSpace) }
     }
 
     /// Writes opt-in defaults once so `bool(forKey:)` returns real values
