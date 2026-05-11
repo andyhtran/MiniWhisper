@@ -238,7 +238,7 @@ final class AppState: Sendable {
     /// Re-transcribe a completed recording with the currently active model,
     /// creating a new history entry. Does not auto-paste — the user copies
     /// from the new history row manually.
-    func retranscribeAsNew(_ recording: Recording) {
+    func retranscribeAsNew(_ recording: Recording, applyCleanup: Bool = false) {
         guard recorder.state.isIdle else {
             toast.showError(
                 title: "Busy", message: "Wait for the current recording/transcription to finish.")
@@ -253,7 +253,7 @@ final class AppState: Sendable {
         recorder.state = .processing
 
         Task {
-            await retranscribeAsNewEntry(from: recording)
+            await retranscribeAsNewEntry(from: recording, applyCleanup: applyCleanup)
         }
     }
 

@@ -303,6 +303,11 @@ private struct HistoryPopoverRow: View {
                     appState.retranscribeAsNew(recording)
                 }
                 .disabled(isRetranscribeDisabled)
+
+                Button("Re-transcribe with cleanup") {
+                    appState.retranscribeAsNew(recording, applyCleanup: true)
+                }
+                .disabled(isRetranscribeDisabled)
             }
             Button("Show metadata") {
                 let metadataURL = recording.storageDirectory
