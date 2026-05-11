@@ -95,18 +95,11 @@ extension AppState {
     /// points (fresh recording, re-transcribe cancelled, re-transcribe as new)
     /// funnel upload audio through here, and any failure inside the
     /// preprocessor falls back to the original WAV.
-    ///
-    /// Only applies to Custom (remote) mode — local models run on-device so
-    /// trimming silence has no upload-cost benefit, and whisper.cpp has its
-    /// own VAD pass built in.
     private func preprocessForUpload(
         audioURL: URL,
         duration: TimeInterval,
         storageDir: URL
     ) async -> (url: URL, applied: Bool) {
-        guard transcriptionMode == .custom else {
-            return (audioURL, false)
-        }
         return await VADPreprocessor.shared.preprocess(
             audioURL: audioURL,
             durationSeconds: duration,

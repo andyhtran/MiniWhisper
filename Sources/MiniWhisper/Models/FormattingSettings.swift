@@ -53,7 +53,7 @@ enum FormattingSettings {
     /// have `defaultsSeeded` set, so the presence check is what reaches
     /// them rather than `seedDefaultsIfNeeded`).
     static var appendTrailingSpace: Bool {
-        get { UserDefaults.standard.defaultsToTrue(forKey: Keys.appendTrailingSpace) }
+        get { UserDefaults.standard.bool(forKey: Keys.appendTrailingSpace) }
         set { UserDefaults.standard.set(newValue, forKey: Keys.appendTrailingSpace) }
     }
 
