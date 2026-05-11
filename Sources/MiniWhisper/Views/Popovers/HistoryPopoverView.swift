@@ -5,6 +5,15 @@ import SwiftUI
 
 struct HistoryPopoverView: View {
     @Environment(AppState.self) private var appState
+    @State private var visibleLimit = 3
+
+    private var items: [Recording] {
+        appState.recordingStore.historyItems(limit: visibleLimit)
+    }
+
+    private var hasMore: Bool {
+        visibleLimit < appState.recordingStore.totalHistoryItemCount
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -15,7 +24,7 @@ struct HistoryPopoverView: View {
                 .tracking(0.5)
                 .padding(.horizontal, 10)
 
-            if appState.recordingStore.recentHistoryItems.isEmpty {
+            if items.isEmpty {
                 Text("No recent transcripts")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary.opacity(0.7))
@@ -24,8 +33,29 @@ struct HistoryPopoverView: View {
                     .padding(.horizontal, 10)
             } else {
                 VStack(spacing: 2) {
-                    ForEach(appState.recordingStore.recentHistoryItems) { recording in
+                    ForEach(items) { recording in
                         HistoryPopoverRow(recording: recording)
+                    }
+
+                    if hasMore {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                visibleLimit += 5
+                            }
+                        } label: {
+                            Text("Show More")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.accentColor)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.plain)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.accentColor.opacity(0.08))
+                        )
+                        .padding(.horizontal, 10)
+                        .padding(.top, 4)
                     }
                 }
             }

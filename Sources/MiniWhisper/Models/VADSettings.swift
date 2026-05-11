@@ -1,8 +1,8 @@
 import Foundation
 
 /// Preference for the client-side VAD preprocessing step applied between
-/// recording and upload. Default OFF — only applies to Custom (remote) mode
-/// and users opt in explicitly via the toggle that appears in that mode.
+/// recording and transcription. Default OFF — users opt in explicitly via
+/// the toggle in General settings.
 enum VADSettings {
     private static let key = "VADPreprocessingEnabled"
 
