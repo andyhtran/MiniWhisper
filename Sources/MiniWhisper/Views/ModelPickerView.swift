@@ -228,8 +228,6 @@ private struct CustomEndpointSection: View {
     @State private var draftURL = ""
     @State private var draftAPIKey = ""
     @State private var draftModel = ""
-    @State private var vadEnabled = VADSettings.enabled
-
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -280,25 +278,7 @@ private struct CustomEndpointSection: View {
                 }
             }
 
-            HStack {
-                Text("Trim long silences")
-                    .font(.system(size: 13))
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { vadEnabled },
-                        set: {
-                            vadEnabled = $0
-                            VADSettings.enabled = $0
-                        }
-                    )
-                )
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
         }
-        .onAppear { vadEnabled = VADSettings.enabled }
     }
 
     private var header: some View {

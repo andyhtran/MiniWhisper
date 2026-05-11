@@ -5,6 +5,7 @@ struct SettingsPopoverView: View {
     @StateObject private var launchManager = LaunchAtLoginManager.shared
     @State private var editModeBehavior = EditModeSettings.behavior
     @State private var errorToastsEnabled = GeneralSettings.errorToastsEnabled
+    @State private var vadEnabled = VADSettings.enabled
 
     var body: some View {
         @Bindable var appState = appState
@@ -45,6 +46,24 @@ struct SettingsPopoverView: View {
                             set: {
                                 errorToastsEnabled = $0
                                 GeneralSettings.errorToastsEnabled = $0
+                            }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                }
+
+                HStack {
+                    Text("Trim long silences")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { vadEnabled },
+                            set: {
+                                vadEnabled = $0
+                                VADSettings.enabled = $0
                             }
                         )
                     )
@@ -128,6 +147,7 @@ struct SettingsPopoverView: View {
             launchManager.refresh()
             editModeBehavior = EditModeSettings.behavior
             errorToastsEnabled = GeneralSettings.errorToastsEnabled
+            vadEnabled = VADSettings.enabled
         }
     }
 }

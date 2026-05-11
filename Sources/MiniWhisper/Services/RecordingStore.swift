@@ -92,10 +92,18 @@ final class RecordingStore: Sendable {
     }
 
     var recentHistoryItems: [Recording] {
+        historyItems(limit: 3)
+    }
+
+    func historyItems(limit: Int) -> [Recording] {
         let filtered = recordings.filter { recording in
             recording.transcription != nil || recording.status == .cancelled
         }
-        return Array(filtered.prefix(3))
+        return Array(filtered.prefix(limit))
+    }
+
+    var totalHistoryItemCount: Int {
+        recordings.count { $0.transcription != nil || $0.status == .cancelled }
     }
 
     // MARK: - Retention
