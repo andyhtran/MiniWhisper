@@ -97,10 +97,14 @@ private struct HistoryPopoverRow: View {
         }
     }
 
-    /// Edit-mode entries copy the edited result (the thing the user
-    /// pasted); voice entries copy the transcription text.
+    private var isSelectionCleanup: Bool {
+        recording.cleanup != nil && recording.transcription == nil && recording.editMode == nil
+    }
+
     private var copyTarget: String? {
-        recording.editMode?.editedResult ?? recording.transcription?.text
+        if let editMode = recording.editMode { return editMode.editedResult }
+        if isSelectionCleanup { return recording.cleanup?.cleanedText }
+        return recording.transcription?.text
     }
 
     private var rowContent: some View {
@@ -142,7 +146,7 @@ private struct HistoryPopoverRow: View {
 
             Spacer(minLength: 12)
 
-            if recording.transcription != nil {
+            if recording.transcription != nil || isSelectionCleanup {
                 HStack(spacing: 6) {
                     if copied {
                         Image(systemName: "checkmark.circle.fill")
@@ -188,6 +192,9 @@ private struct HistoryPopoverRow: View {
         if let edited = recording.editMode?.editedResult {
             return edited
         }
+        if isSelectionCleanup, let cleaned = recording.cleanup?.cleanedText {
+            return cleaned
+        }
         if let text = recording.transcription?.text {
             return text
         }
@@ -198,7 +205,7 @@ private struct HistoryPopoverRow: View {
     }
 
     private var hasContent: Bool {
-        recording.editMode != nil || recording.transcription != nil
+        recording.editMode != nil || recording.transcription != nil || isSelectionCleanup
     }
 
     /// Metadata suffix after the timestamp. Latency comes before the
@@ -220,6 +227,15 @@ private struct HistoryPopoverRow: View {
             if let instruction = recording.transcription?.text, !instruction.isEmpty {
                 parts.append("\u{201C}\(instruction)\u{201D}")
             }
+            return parts.joined(separator: " · ")
+        }
+        if isSelectionCleanup, let cleanup = recording.cleanup {
+            var parts = ["Selection"]
+            if let duration = cleanup.cleanupDuration, duration > 0 {
+                parts.append(formatEditDuration(duration))
+            }
+            parts.append(friendlyEditModelName(
+                backend: nil, model: cleanup.backendModel))
             return parts.joined(separator: " · ")
         }
         if let transcription = recording.transcription {

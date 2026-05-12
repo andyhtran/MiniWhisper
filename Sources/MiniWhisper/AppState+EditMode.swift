@@ -1,48 +1,25 @@
 import Foundation
 
 extension AppState {
-    /// Edit-selection shortcut: toggles a voice-driven edit on the
-    /// currently-selected text in the frontmost app.
+    /// Edit-selection shortcut handler. Behavior depends on the voice
+    /// edit toggle:
     ///
-    /// First press → captures the selection via ⌘C, starts an audio
-    /// recording. The user speaks an instruction ("make this formal",
-    /// "translate to Spanish", etc.).
-    /// Second press → stops recording, transcribes the voice via the
-    /// custom STT endpoint, sends `(instruction, selection)` to chat
-    /// completions, pastes the result over the original selection.
-    /// Esc cancels mid-recording and restores the pasteboard.
+    /// **Voice edit off (default):** single-press — captures the
+    /// selection, runs the cleanup LLM immediately, pastes the result.
+    ///
+    /// **Voice edit on:** two-press flow — first press captures
+    /// selection + starts recording a voice instruction, second press
+    /// stops recording and applies the instruction to the selection.
     func editSelection() {
-        guard voiceEditEnabled else { return }
+        guard selectionEnabled else { return }
 
         if editModeContext != nil {
             Task { await stopAndApplyEditFlow() }
             return
         }
 
-        // Don't start an edit recording if the normal recording flow is
-        // already running — they share `recorder` and would interleave.
         guard recorder.state.isIdle else { return }
 
-        // Edit mode uses whichever transcription model is currently
-        // selected (Parakeet / Whisper / Custom) for the spoken
-        // instruction, then routes to the chosen edit backend for the
-        // edit. Surface model-not-ready the same way recording does.
-        guard isModelLoaded else {
-            if transcriptionMode == .custom {
-                toast.showError(
-                    title: "Not Configured",
-                    message: "Configure your custom transcription endpoint before using edit mode.")
-            } else {
-                toast.showError(
-                    title: "Model Not Ready",
-                    message: "Please wait for the transcription model to finish loading.")
-            }
-            return
-        }
-
-        // Edit-model side has its own readiness gate: if the user picked
-        // the Custom edit model but never configured it, fail fast before
-        // recording an instruction we can't apply.
         if EditModeSettings.model == .custom,
            !customEditProviderSettings.isConfigured
         {
@@ -52,7 +29,23 @@ extension AppState {
             return
         }
 
-        Task { await startEditModeFlow() }
+        if voiceEditEnabled {
+            guard isModelLoaded else {
+                if transcriptionMode == .custom {
+                    toast.showError(
+                        title: "Not Configured",
+                        message: "Configure your custom transcription endpoint before using edit mode.")
+                } else {
+                    toast.showError(
+                        title: "Model Not Ready",
+                        message: "Please wait for the transcription model to finish loading.")
+                }
+                return
+            }
+            Task { await startEditModeFlow() }
+        } else {
+            Task { await cleanupSelectionFlow() }
+        }
     }
 
     func cancelEditModeRecording() {
@@ -65,6 +58,67 @@ extension AppState {
             recorder.reset()
             pasteboard.restoreSavedPasteboard(context.savedPasteboard)
         }
+    }
+
+    /// Single-press cleanup: captures the selection, runs the cleanup
+    /// LLM, and pastes the result — no recording involved.
+    private func cleanupSelectionFlow() async {
+        guard let captured = await pasteboard.captureSelection() else {
+            toast.showError(
+                title: "Nothing to Clean Up",
+                message: "Select text in any app, then press your edit shortcut.")
+            return
+        }
+
+        if captured.text.count > EditModeProvider.hardCharThreshold {
+            pasteboard.restoreSavedPasteboard(captured.saved)
+            let formatted = captured.text.count.formatted(.number.grouping(.automatic))
+            toast.showError(
+                title: "Selection Too Large",
+                message: "Selection cleanup is for focused edits — \(formatted) chars is over the limit. Try a smaller chunk.")
+            return
+        }
+
+        recorder.state = .processing
+        isEditModeProcessing = true
+        editModeProcessingCharCount = captured.text.count
+        defer {
+            isEditModeProcessing = false
+            editModeProcessingCharCount = 0
+        }
+
+        let (cleanedText, cleanup) = await applyAutoCleanup(
+            rawText: captured.text, applyCleanup: true)
+
+        recorder.reset()
+
+        guard let cleanup else {
+            pasteboard.restoreSavedPasteboard(captured.saved)
+            toast.showError(
+                title: "Cleanup Failed",
+                message: "Could not clean up the selected text. Check your edit model configuration.")
+            return
+        }
+
+        saveSelectionCleanup(cleanup: cleanup)
+        pasteboard.pasteAndRestore(cleanedText, savedPasteboard: captured.saved)
+    }
+
+    private func saveSelectionCleanup(cleanup: RecordingCleanup) {
+        let recording = Recording(
+            id: Recording.generateId(),
+            createdAt: Date(),
+            recording: RecordingInfo(
+                duration: 0, sampleRate: 0, channels: 0, fileSize: 0,
+                inputDevice: nil),
+            transcription: nil,
+            configuration: RecordingConfiguration(
+                voiceModel: "", language: ""),
+            status: .completed,
+            cleanup: cleanup
+        )
+
+        try? recordingStore.saveFailedRecording(recording)
     }
 
     private func startEditModeFlow() async {

@@ -25,8 +25,9 @@ final class AppState: Sendable {
     var customEditProviderSettings = CustomEditProviderSettings.load()
     var editModeBehavior: EditModeBehavior = EditModeSettings.behavior
 
-    var voiceEditEnabled: Bool { editModeBehavior.voiceEditEnabled }
+    var selectionEnabled: Bool { editModeBehavior.selectionEnabled }
     var autoCleanupEnabled: Bool { editModeBehavior.autoCleanupEnabled }
+    var voiceEditEnabled: Bool = EditModeSettings.voiceEdit
 
     /// Set while a voice-edit recording is active. Holds the captured
     /// selection + saved pasteboard so the second shortcut press can
