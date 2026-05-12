@@ -85,7 +85,7 @@ struct SettingsPopoverView: View {
                 HStack(spacing: 4) {
                     Text("AI editing mode")
                         .font(.system(size: 13))
-                    InfoBadge(text: "Voice Edit: press the edit shortcut, speak an instruction (\"make this formal\"), press again to apply it to selected text. Auto-Cleanup: every recording gets an LLM polish pass before pasting. Pick the edit model from the Model menu.")
+                    InfoBadge(text: "Selection — clean up selected text with AI. Cleanup — polish recordings before pasting.")
                     Spacer()
                     Picker(
                         "",
@@ -105,6 +105,27 @@ struct SettingsPopoverView: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                     .fixedSize()
+                }
+
+                if editModeBehavior.selectionEnabled {
+                    HStack(spacing: 4) {
+                        Text("Voice instruction")
+                            .font(.system(size: 13))
+                        InfoBadge(text: "Speak an editing instruction (e.g. \"make this formal\") instead of auto-cleaning the selection.")
+                        Spacer()
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { appState.voiceEditEnabled },
+                                set: {
+                                    appState.voiceEditEnabled = $0
+                                    EditModeSettings.voiceEdit = $0
+                                }
+                            )
+                        )
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                    }
                 }
 
                 HStack(spacing: 4) {
@@ -133,7 +154,7 @@ struct SettingsPopoverView: View {
 
                 OpenMiniWhisperFolderRow()
 
-                if editModeBehavior.autoCleanupEnabled {
+                if !editModeBehavior.isOff {
                     CleanupPromptRow()
                 }
             }

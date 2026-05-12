@@ -327,7 +327,7 @@ extension AppState {
     /// Creates a new recording entry by re-transcribing an existing completed
     /// recording's audio with the currently active model. Hard-links the audio
     /// file so both entries share the same bytes on disk.
-    func retranscribeAsNewEntry(from source: Recording) async {
+    func retranscribeAsNewEntry(from source: Recording, applyCleanup: Bool = false) async {
         let newId = Recording.generateId()
         let newDir = Recording.baseDirectory.appendingPathComponent(newId)
         // Preserve the source's audio format (wav or caf) so the hard-link
@@ -389,7 +389,13 @@ extension AppState {
                 return
             }
 
-            let finalText = applyPostProcessing(to: result.text)
+            let options = currentFormatterOptions()
+            let withReplacements = TranscriptionFormatter.applyReplacements(
+                to: result.text, options: options)
+            let cleanupResult = await applyAutoCleanup(
+                rawText: withReplacements, applyCleanup: applyCleanup)
+            let finalText = TranscriptionFormatter.applyFormatting(
+                to: cleanupResult.text, options: options)
 
             let fileSize =
                 (try? FileManager.default.attributesOfItem(atPath: newAudioURL.path)[.size]
@@ -418,7 +424,8 @@ extension AppState {
                     provider: transcriptionMode.rawValue
                 ),
                 status: .completed,
-                audioFileName: source.audioFileName  // mirror source's wav/caf choice
+                cleanup: cleanupResult.cleanup,
+                audioFileName: source.audioFileName
             )
 
             try recordingStore.saveWithExistingAudio(newRecording)

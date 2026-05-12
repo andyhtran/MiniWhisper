@@ -330,7 +330,7 @@ private struct ShortcutSection: View {
                 ShortcutRow(label: "Cleanup Recording", name: .autoCleanupRecording)
             }
 
-            if appState.voiceEditEnabled {
+            if appState.selectionEnabled {
                 ShortcutRow(label: "Edit Selection", name: .editSelection)
             }
         }

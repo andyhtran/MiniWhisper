@@ -82,7 +82,7 @@ final class HotkeyManager {
         // the frontmost app instead of being consumed. UserDefaults is
         // thread-safe — no callback wiring needed.
         shortcutMonitor.setEnabledCheck(for: .editSelection) {
-            EditModeSettings.behavior.voiceEditEnabled
+            EditModeSettings.behavior.selectionEnabled
         }
         // Fire on keyUp so the user's modifier (e.g. ⌥) has been released
         // before we synthesize ⌘C — otherwise the held modifier combines
