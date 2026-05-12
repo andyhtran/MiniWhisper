@@ -64,22 +64,24 @@ enum EditModeBackend: String, Codable, Sendable {
 }
 
 /// Top-level mode for AI editing. The two underlying features are:
-/// `voiceEdit` (the ⌥E shortcut → record an instruction → rewrite the
-/// selected text) and `autoCleanup` (every Fn recording gets an LLM
-/// polish pass after transcription before insertion). They share the
-/// Edit Model + provider, so one picker drives both knobs.
+/// `selection` (the ⌥E shortcut → LLM-process selected text) and
+/// `autoCleanup` (every Fn recording gets an LLM polish pass after
+/// transcription before insertion). They share the Edit Model +
+/// provider, so one picker drives both knobs.
 ///
-/// `both` is a convenience union; if/when a third feature appears, this
-/// should migrate to independent toggles to avoid combinatorial bloat.
+/// When `selection` (or `both`) is active, a separate `voiceEdit`
+/// toggle controls whether the selection shortcut records a voice
+/// instruction first (voice edit) or immediately runs cleanup on the
+/// selected text (default, no recording needed).
 enum EditModeBehavior: String, Codable, CaseIterable, Sendable {
     case off
     case both
     case autoCleanup
-    case voiceEdit
+    case selection
 
-    var voiceEditEnabled: Bool {
+    var selectionEnabled: Bool {
         switch self {
-        case .voiceEdit, .both: return true
+        case .selection, .both: return true
         case .off, .autoCleanup: return false
         }
     }
@@ -87,7 +89,7 @@ enum EditModeBehavior: String, Codable, CaseIterable, Sendable {
     var autoCleanupEnabled: Bool {
         switch self {
         case .autoCleanup, .both: return true
-        case .off, .voiceEdit: return false
+        case .off, .selection: return false
         }
     }
 
@@ -98,21 +100,31 @@ enum EditModeBehavior: String, Codable, CaseIterable, Sendable {
         case .off: return "Off"
         case .both: return "Both"
         case .autoCleanup: return "Cleanup"
-        case .voiceEdit: return "Voice Edit"
+        case .selection: return "Selection"
         }
     }
 }
 
-/// Settings for AI editing (voice-edit + auto-cleanup).
+/// Settings for AI editing (selection + auto-cleanup).
 enum EditModeSettings {
     private static let behaviorKey = "EditModeBehavior"
     private static let modelKey = "EditModeModel"
+    private static let voiceEditKey = "EditModeVoiceEdit"
 
     static var behavior: EditModeBehavior {
         get {
             guard let raw = UserDefaults.standard.string(forKey: behaviorKey),
                   let behavior = EditModeBehavior(rawValue: raw)
             else {
+                // Migrate legacy "voiceEdit" → "selection"
+                if let raw = UserDefaults.standard.string(forKey: behaviorKey),
+                   raw == "voiceEdit"
+                {
+                    UserDefaults.standard.set(
+                        EditModeBehavior.selection.rawValue, forKey: behaviorKey)
+                    UserDefaults.standard.set(true, forKey: voiceEditKey)
+                    return .selection
+                }
                 return .off
             }
             return behavior
@@ -130,5 +142,13 @@ enum EditModeSettings {
             return model
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: modelKey) }
+    }
+
+    /// When true, the selection shortcut records a voice instruction
+    /// before applying the edit. When false (default), it immediately
+    /// runs cleanup on the selected text — no recording needed.
+    static var voiceEdit: Bool {
+        get { UserDefaults.standard.bool(forKey: voiceEditKey) }
+        set { UserDefaults.standard.set(newValue, forKey: voiceEditKey) }
     }
 }

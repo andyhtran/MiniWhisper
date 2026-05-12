@@ -25,8 +25,9 @@ final class AppState: Sendable {
     var customEditProviderSettings = CustomEditProviderSettings.load()
     var editModeBehavior: EditModeBehavior = EditModeSettings.behavior
 
-    var voiceEditEnabled: Bool { editModeBehavior.voiceEditEnabled }
+    var selectionEnabled: Bool { editModeBehavior.selectionEnabled }
     var autoCleanupEnabled: Bool { editModeBehavior.autoCleanupEnabled }
+    var voiceEditEnabled: Bool = EditModeSettings.voiceEdit
 
     /// Set while a voice-edit recording is active. Holds the captured
     /// selection + saved pasteboard so the second shortcut press can
@@ -238,7 +239,7 @@ final class AppState: Sendable {
     /// Re-transcribe a completed recording with the currently active model,
     /// creating a new history entry. Does not auto-paste — the user copies
     /// from the new history row manually.
-    func retranscribeAsNew(_ recording: Recording) {
+    func retranscribeAsNew(_ recording: Recording, applyCleanup: Bool = false) {
         guard recorder.state.isIdle else {
             toast.showError(
                 title: "Busy", message: "Wait for the current recording/transcription to finish.")
@@ -253,7 +254,7 @@ final class AppState: Sendable {
         recorder.state = .processing
 
         Task {
-            await retranscribeAsNewEntry(from: recording)
+            await retranscribeAsNewEntry(from: recording, applyCleanup: applyCleanup)
         }
     }
 
