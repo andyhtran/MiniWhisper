@@ -82,11 +82,17 @@ github-release: sign-and-notarize create-dmg
 update-tap:
     bash Scripts/update-tap.sh
 
-# Full release: sign, notarize, GitHub release, update tap
+# Full release: sign, notarize, GitHub release, update tap, update appcast
 [group('release')]
 publish: github-release update-tap
-    @echo "Release complete!"
-    # TODO: just generate-appcast "MiniWhisper-${MARKETING_VERSION}.zip"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source version.env
+    just generate-appcast "MiniWhisper-${MARKETING_VERSION}.zip"
+    git add appcast.xml
+    git commit -m "Update appcast for v${MARKETING_VERSION}"
+    git push origin main
+    echo "Release complete!"
 
 [group('sparkle')]
 generate-appcast zip:
