@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>MiniWhisper</title>
+        <item>
+            <title>1.4.1</title>
+            <pubDate>Mon, 18 May 2026 15:54:05 -0400</pubDate>
+            <link>https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml</link>
+            <sparkle:version>19</sparkle:version>
+            <sparkle:shortVersionString>1.4.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/andyhtran/MiniWhisper/releases/download/v1.4.1/MiniWhisper-1.4.1.zip" length="8226210" type="application/octet-stream" sparkle:edSignature="XsE+IoT6qylywU4fCkpJk9OZHE+AKvO2uWVFJh1QqCJxlPZ9VwlALpLgy1K6uXh/li9rSB/0l/43pznBQ9zlCA=="/>
+        </item>
+    </channel>
+</rss>
