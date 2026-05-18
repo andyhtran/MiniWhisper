@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyManager: HotkeyManager?
     private var hotkeyDelegate: HotkeyDelegateImpl?
     private var appNapActivity: NSObjectProtocol?
+    let updaterController: UpdaterProviding = makeUpdaterController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)

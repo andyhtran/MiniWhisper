@@ -6,6 +6,8 @@ struct SettingsPopoverView: View {
     @State private var editModeBehavior = EditModeSettings.behavior
     @State private var errorToastsEnabled = GeneralSettings.errorToastsEnabled
     @State private var vadEnabled = VADSettings.enabled
+    @State private var autoUpdateEnabled = (NSApp.delegate as? AppDelegate)?.updaterController
+        .automaticallyChecksForUpdates ?? true
 
     var body: some View {
         @Bindable var appState = appState
@@ -28,6 +30,25 @@ struct SettingsPopoverView: View {
                         isOn: Binding(
                             get: { launchManager.isEnabled },
                             set: { launchManager.isEnabled = $0 }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                }
+
+                HStack {
+                    Text("Check for updates automatically")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { autoUpdateEnabled },
+                            set: {
+                                autoUpdateEnabled = $0
+                                (NSApp.delegate as? AppDelegate)?.updaterController
+                                    .automaticallyChecksForUpdates = $0
+                            }
                         )
                     )
                     .toggleStyle(.switch)
@@ -158,6 +179,7 @@ struct SettingsPopoverView: View {
                     CleanupPromptRow()
                 }
             }
+
         }
         .padding(12)
         .frame(width: 300)
