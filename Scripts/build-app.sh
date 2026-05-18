@@ -14,9 +14,13 @@ BUNDLE_ID_RELEASE="com.miniwhisper.app"
 if [[ "$BUILD_CONFIG" == "debug" ]]; then
     BUNDLE_ID="$BUNDLE_ID_DEBUG"
     DISPLAY_NAME="MiniWhisper Dev"
+    FEED_URL=""
+    AUTO_CHECKS=false
 else
     BUNDLE_ID="$BUNDLE_ID_RELEASE"
     DISPLAY_NAME="MiniWhisper"
+    FEED_URL="https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml"
+    AUTO_CHECKS=true
 fi
 
 echo "Building $APP_NAME ($BUILD_CONFIG)..."
@@ -44,6 +48,36 @@ if [ -d "$BUILD_DIR/whisper.framework" ]; then
     ln -sf Versions/Current/Resources "$FRAMEWORKS_DIR/whisper.framework/Resources"
     ln -sf Versions/Current/whisper "$FRAMEWORKS_DIR/whisper.framework/whisper"
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+fi
+
+# Embed Sparkle.framework
+if [[ -d "$BUILD_DIR/Sparkle.framework" ]]; then
+    mkdir -p "$FRAMEWORKS_DIR"
+    cp -R "$BUILD_DIR/Sparkle.framework" "$FRAMEWORKS_DIR/"
+    chmod -R a+rX "$FRAMEWORKS_DIR/Sparkle.framework"
+    install_name_tool -add_rpath "@executable_path/../Frameworks" \
+        "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+
+    SPARKLE_FW="$FRAMEWORKS_DIR/Sparkle.framework"
+
+    if [[ "$BUILD_CONFIG" == "debug" ]]; then
+        CODESIGN_ARGS=(--force --sign "-")
+    else
+        CODESIGN_ARGS=(--force --timestamp --options runtime --sign "${CODESIGN_IDENTITY:--}")
+    fi
+
+    resign() { codesign "${CODESIGN_ARGS[@]}" "$1"; }
+
+    resign "$SPARKLE_FW/Versions/B/Sparkle"
+    resign "$SPARKLE_FW/Versions/B/Autoupdate"
+    resign "$SPARKLE_FW/Versions/B/Updater.app/Contents/MacOS/Updater"
+    resign "$SPARKLE_FW/Versions/B/Updater.app"
+    resign "$SPARKLE_FW/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader"
+    resign "$SPARKLE_FW/Versions/B/XPCServices/Downloader.xpc"
+    resign "$SPARKLE_FW/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer"
+    resign "$SPARKLE_FW/Versions/B/XPCServices/Installer.xpc"
+    resign "$SPARKLE_FW/Versions/B"
+    resign "$SPARKLE_FW"
 fi
 
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
@@ -85,6 +119,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
     <string>Copyright © 2026 Andy Tran. All rights reserved.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>MiniWhisper needs microphone access to record and transcribe speech.</string>
+    <key>SUFeedURL</key>
+    <string>${FEED_URL}</string>
+    <key>SUPublicEDKey</key>
+    <string>${SU_PUBLIC_ED_KEY}</string>
+    <key>SUEnableAutomaticChecks</key>
+    <${AUTO_CHECKS}/>
 </dict>
 </plist>
 PLIST

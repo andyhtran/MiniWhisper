@@ -86,6 +86,19 @@ update-tap:
 [group('release')]
 publish: github-release update-tap
     @echo "Release complete!"
+    # TODO: just generate-appcast "MiniWhisper-${MARKETING_VERSION}.zip"
+
+[group('sparkle')]
+generate-appcast zip:
+    ./Scripts/make-appcast.sh {{zip}}
+
+[group('sparkle')]
+generate-appcast-beta zip:
+    SPARKLE_CHANNEL=beta ./Scripts/make-appcast.sh {{zip}}
+
+[group('sparkle')]
+verify-appcast version="":
+    ./Scripts/verify-appcast.sh {{version}}
 
 # Kill running instance
 [group('dev')]
