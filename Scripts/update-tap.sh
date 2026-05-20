@@ -38,6 +38,7 @@ cask "miniwhisper" do
   desc "Voice-to-text transcription from the menu bar"
   homepage "https://github.com/andyhtran/MiniWhisper"
 
+  auto_updates true
   depends_on macos: ">= :sonoma"
 
   app "MiniWhisper.app"
