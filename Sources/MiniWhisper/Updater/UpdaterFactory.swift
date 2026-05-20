@@ -10,11 +10,6 @@ func makeUpdaterController() -> UpdaterProviding {
         return DisabledUpdaterController(unavailableReason: "Updates unavailable in this build.")
     }
 
-    if InstallOrigin.isHomebrewCask(appBundleURL: bundleURL) {
-        return DisabledUpdaterController(
-            unavailableReason: "Updates managed by Homebrew. Run: brew upgrade --cask andyhtran/tap/miniwhisper")
-    }
-
     guard isDeveloperIDSigned(bundleURL: bundleURL) else {
         return DisabledUpdaterController(unavailableReason: "Updates unavailable in this build.")
     }
