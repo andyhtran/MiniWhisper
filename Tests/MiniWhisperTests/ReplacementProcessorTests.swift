@@ -1,5 +1,6 @@
-import Testing
+import Foundation
 @testable import MiniWhisper
+import Testing
 
 struct ReplacementProcessorTests {
     @Test(arguments: [
@@ -58,16 +59,93 @@ struct ReplacementProcessorTests {
     @Test func enabledRulesFiltersCorrectly() {
         let settings = ReplacementSettings(
             enabled: true,
-            rules: [
-                ReplacementRule(find: "a", replace: "b", enabled: true),
-                ReplacementRule(find: "c", replace: "d", enabled: false),
-                ReplacementRule(find: "", replace: "x", enabled: true),
-                ReplacementRule(find: "e", replace: "f", enabled: true),
+            groups: [
+                ReplacementGroup(
+                    replacement: "b",
+                    variants: [
+                        ReplacementVariant(find: "a"),
+                        ReplacementVariant(enabled: false, find: "c"),
+                        ReplacementVariant(find: ""),
+                    ]
+                ),
+                ReplacementGroup(
+                    enabled: false,
+                    replacement: "f",
+                    variants: [ReplacementVariant(find: "e")]
+                ),
+                ReplacementGroup(
+                    replacement: "h",
+                    variants: [ReplacementVariant(find: "g")]
+                ),
             ]
         )
         let enabled = settings.enabledRules
         #expect(enabled.count == 2)
         #expect(enabled[0].find == "a")
-        #expect(enabled[1].find == "e")
+        #expect(enabled[1].find == "g")
+    }
+
+    @Test func defaultSettingsIncludeDisabledRemovalGroup() {
+        let settings = ReplacementSettings()
+
+        let removalGroup = settings.groups.first
+        #expect(removalGroup?.isRemovalGroup == true)
+        #expect(removalGroup?.enabled == false)
+        #expect(removalGroup?.variants.isEmpty == true)
+    }
+
+    @Test func legacyRulesDecodeIntoGroupedSchema() throws {
+        let legacyJSON = """
+        {
+          "enabled": true,
+          "rules": [
+            { "enabled": true, "find": "clawd", "replace": "Claude", "preserveCase": true },
+            { "enabled": false, "find": "clawed", "replace": "Claude", "preserveCase": true },
+            { "enabled": true, "find": "cloud code", "replace": "Claude Code" },
+            { "enabled": true, "find": "um", "replace": "" }
+          ]
+        }
+        """
+
+        let settings = try JSONDecoder().decode(ReplacementSettings.self, from: Data(legacyJSON.utf8))
+
+        #expect(settings.schemaVersion == ReplacementSettings.currentSchemaVersion)
+        #expect(settings.enabled)
+        #expect(settings.groups.count == 3)
+
+        let removalGroup = try #require(settings.groups.first { $0.isRemovalGroup })
+        #expect(removalGroup.enabled)
+        #expect(removalGroup.variants.map(\.find) == ["um"])
+        #expect(removalGroup.flattenedRules.map(\.replace) == [""])
+
+        let claude = try #require(settings.groups.first { $0.replacement == "Claude" })
+        #expect(claude.preserveCase)
+        #expect(claude.variants.map(\.find) == ["clawd", "clawed"])
+        #expect(claude.variants.map(\.enabled) == [true, false])
+    }
+
+    @Test func settingsEncodeVersionedGroupedSchema() throws {
+        let settings = ReplacementSettings(
+            enabled: true,
+            groups: [
+                ReplacementGroup(
+                    replacement: "Claude",
+                    preserveCase: true,
+                    variants: [
+                        ReplacementVariant(find: "clawd"),
+                        ReplacementVariant(find: "clawed"),
+                    ]
+                ),
+            ]
+        )
+
+        let data = try JSONEncoder().encode(settings)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["schemaVersion"] as? Int == ReplacementSettings.currentSchemaVersion)
+        #expect(object["rules"] == nil)
+        let groups = try #require(object["groups"] as? [[String: Any]])
+        #expect(groups.count == 2)
+        #expect(groups.first?["replacement"] as? String == "")
     }
 }

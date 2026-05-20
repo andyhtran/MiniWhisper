@@ -19,7 +19,7 @@ struct ReplacementProcessor: Sendable {
         var result = text
         for rule in orderedRules {
             let find = rule.find
-            guard !find.isEmpty else { continue }
+            guard rule.enabled, !find.isEmpty else { continue }
 
             let escapedFind = NSRegularExpression.escapedPattern(for: find)
             let pattern = Self.hasWordEdges(find)
