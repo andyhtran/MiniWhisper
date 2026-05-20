@@ -142,12 +142,9 @@ extension AppState {
                 return
             }
 
-            // Replacements → LLM cleanup → formatting. Replacements run
-            // first so the user's explicit find/replace rules shape what
-            // the LLM sees (e.g. `claw code` → `claude code` before the
-            // model rewrites the sentence around it). Cosmetic formatting
-            // runs after the LLM so capitalization/paragraph/trailing-
-            // punctuation pick up its polish too.
+            // Ordinary replacements shape what the cleanup model sees;
+            // exact-case replacements run with formatting so declared names
+            // survive global capitalization settings.
             let options = currentFormatterOptions()
             let withReplacements = TranscriptionFormatter.applyReplacements(
                 to: result.text, options: options)

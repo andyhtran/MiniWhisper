@@ -5,12 +5,10 @@ import Foundation
 /// trailing-punctuation stripping into one ordered pipeline so every
 /// consumer sees the same canonical output.
 ///
-/// The pipeline splits into two phases — `applyReplacements` (Spoken
-/// Symbols + user rules) and `applyFormatting` (casing + paragraph +
-/// trailing-punctuation strip + trailing space) — so the auto-cleanup
-/// path can run replacements on the raw transcript, then route the
-/// LLM-cleaned output through formatting. `format` composes both for
-/// non-cleanup callers.
+/// The pipeline splits into two phases: `applyReplacements` runs Spoken
+/// Symbols + ordinary user rules before auto-cleanup, then `applyFormatting`
+/// applies style transforms and exact-case replacements after any LLM pass.
+/// `format` composes both for non-cleanup callers.
 enum TranscriptionFormatter {
     struct Options: Sendable {
         let replacementRules: [ReplacementRule]
@@ -25,8 +23,8 @@ enum TranscriptionFormatter {
         applyFormatting(to: applyReplacements(to: text, options: options), options: options)
     }
 
-    /// Phase 1: deterministic find/replace (Spoken Symbols, then user
-    /// rules). Runs before auto-cleanup so the user's explicit rules
+    /// Phase 1: deterministic find/replace (Spoken Symbols, then ordinary
+    /// user rules). Runs before auto-cleanup so non-case-protected rules can
     /// shape what the LLM sees rather than what it returns.
     static func applyReplacements(to text: String, options: Options) -> String {
         var result = text
@@ -35,19 +33,18 @@ enum TranscriptionFormatter {
             result = ReplacementProcessor(rules: SpokenSymbols.rules).apply(to: result)
         }
 
-        if !options.replacementRules.isEmpty {
-            let processor = ReplacementProcessor(rules: options.replacementRules)
+        let ordinaryRules = options.replacementRules.filter { !$0.preserveCase }
+        if !ordinaryRules.isEmpty {
+            let processor = ReplacementProcessor(rules: ordinaryRules)
             result = processor.apply(to: result)
         }
 
         return result
     }
 
-    /// Phase 2: cosmetic transforms (casing, paragraphs, trailing
-    /// punctuation, trailing space). Runs last so the LLM's polish
-    /// gets the final formatting pass — and so trailing-punctuation
-    /// strip also cleans up any terminal `.` / `!` / `?` an earlier
-    /// step or the LLM introduced.
+    /// Phase 2: cosmetic transforms plus exact-case replacements. Exact-case
+    /// rules run after capitalization so declared names like `MiniWhisper`
+    /// survive Casual lowercase and sentence capitalization.
     static func applyFormatting(to text: String, options: Options) -> String {
         var result = text
 
@@ -66,6 +63,12 @@ enum TranscriptionFormatter {
 
         if options.dropTrailingPunctuation {
             result = stripTrailingSentencePunctuation(result)
+        }
+
+        let exactCaseRules = options.replacementRules.filter(\.preserveCase)
+        if !exactCaseRules.isEmpty {
+            let processor = ReplacementProcessor(rules: exactCaseRules)
+            result = processor.apply(to: result)
         }
 
         // Trailing-space step runs last so it survives every other
