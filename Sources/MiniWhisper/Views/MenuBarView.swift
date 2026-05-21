@@ -18,6 +18,12 @@ struct MenuBarView: View {
                     .padding(.top, 14)
             }
 
+            if appState.showMenuBarVisibilityHint {
+                MenuBarVisibilityHint()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+            }
+
             VStack(spacing: 20) {
                 MicrophoneSection()
                 ShortcutSection()
@@ -409,6 +415,88 @@ private struct ShortcutRow: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Menu Bar Visibility Hint
+
+private struct MenuBarVisibilityHint: View {
+    @Environment(AppState.self) private var appState
+    @State private var isSettingsHovering = false
+    @State private var isDismissHovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "menubar.rectangle")
+                    .font(.system(size: 12))
+                    .foregroundColor(.orange)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Can't see MiniWhisper?")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Hold ⌘ and drag the waveform icon closer to the clock, or hide unused icons in Menu Bar Settings.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button {
+                    UserDefaults.standard.set(true, forKey: "MenuBarVisibilityHintDismissed")
+                    appState.showMenuBarVisibilityHint = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(isDismissHovering ? .primary : .secondary)
+                        .frame(width: 18, height: 18)
+                        .background(
+                            Circle()
+                                .fill(isDismissHovering ? Color.primary.opacity(0.08) : .clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        isDismissHovering = hovering
+                    }
+                }
+            }
+
+            Button {
+                SystemSettingsLinks.openMenuBarSettings()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 10))
+                    Text("Open Menu Bar Settings")
+                        .font(.system(size: 11, weight: .medium))
+                    Spacer()
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                }
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSettingsHovering ? Color.orange.opacity(0.12) : Color.orange.opacity(0.06))
+                )
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isSettingsHovering = hovering
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.orange.opacity(0.05))
+        )
     }
 }
 

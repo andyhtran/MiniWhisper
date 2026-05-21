@@ -34,6 +34,10 @@ final class ToastWindowController: Sendable {
         show(ToastMessage(type: .error, title: title, message: message))
     }
 
+    func showInfo(title: String, message: String? = nil) {
+        show(ToastMessage(type: .info, title: title, message: message))
+    }
+
     func dismiss() {
         dismissTask?.cancel()
 
