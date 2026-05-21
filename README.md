@@ -7,7 +7,7 @@ A minimal macOS menu bar app for voice-to-text with fast on-device transcription
 ![License MIT](https://img.shields.io/github/license/andyhtran/MiniWhisper)
 ![GitHub release](https://img.shields.io/github/v/release/andyhtran/MiniWhisper)
 
-[Getting Started](#getting-started) · [Features](#features) · [Build](#build-commands)
+[Getting Started](#getting-started) · [Features](#features) · [Troubleshooting](#troubleshooting) · [Build](#build-commands)
 
 <p align="center">
   <img src=".github/screenshot.png" alt="MiniWhisper screenshot" width="520">
@@ -62,6 +62,18 @@ just dev
 - **Multiple models** — switch between the default fast model (Parakeet: English + 20 European languages) and multilingual auto-detect (whisper.cpp)
 - **On-device** — all processing happens locally on your Mac, nothing leaves your device
 
+## Troubleshooting
+
+**Can't find the menu bar icon?**
+
+macOS hides menu bar icons that don't fit near the clock. If you have many menu bar apps, MiniWhisper's icon may be pushed out of view.
+
+- **Hold ⌘ and drag** the MiniWhisper waveform icon closer to the clock to keep it visible
+- Open **System Settings → Control Center → Menu Bar Only** and hide icons you don't need
+- In MiniWhisper's settings, click **Open Menu Bar Settings** to jump there directly
+
+MiniWhisper will show a hint about this the first few times it launches. You can also reopen the app from Spotlight or the Dock to bring the popover back.
+
 ## Build commands
 
 ```bash
@@ -76,6 +88,14 @@ Run the local debug CLI on an existing audio file or recording directory:
 
 ```bash
 just debug-transcribe ~/Code/debug-stt/whisper_cpp.wav --engine whisper --preset current-app
+```
+
+To re-test the menu bar visibility hint (resets after 3 shows or manual dismiss):
+
+```bash
+defaults delete com.miniwhisper.dev MenuBarVisibilityHintShownCount
+defaults delete com.miniwhisper.dev MenuBarVisibilityHintDismissed
+just dev
 ```
 
 ## Release

@@ -29,20 +29,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupPopover()
         observeIconState()
+        scheduleLaunchRevealIfNeeded(notification)
 
         Task {
             await setupServices()
         }
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        revealMenuBarInterface()
+        return true
+    }
+
     // MARK: - Status Item & Popover
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.autosaveName = "MiniWhisper.StatusItem"
+        statusItem.isVisible = true
+
         if let button = statusItem.button {
             button.image = MenuBarIconRenderer.render(state: .idle, meterLevel: 0)
             button.action = #selector(togglePopover(_:))
             button.target = self
+            button.toolTip = "MiniWhisper"
         }
     }
 
@@ -57,10 +67,66 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePopover(_ sender: Any?) {
         if popover.isShown {
             popover.performClose(sender)
-        } else if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+        } else {
+            _ = showPopover()
         }
+    }
+
+    private func scheduleLaunchRevealIfNeeded(_ notification: Notification) {
+        let isDefaultLaunch = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool
+            ?? true
+        guard isDefaultLaunch else { return }
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            self?.revealMenuBarInterface()
+        }
+    }
+
+    private func revealMenuBarInterface() {
+        let shouldShowHint = consumeMenuBarVisibilityHintAllowance()
+
+        if showPopover() {
+            appState.showMenuBarVisibilityHint = shouldShowHint
+        } else if shouldShowHint {
+            appState.showMenuBarVisibilityHint = false
+            ToastWindowController.shared.showInfo(
+                title: "Can't see MiniWhisper?",
+                message: "Hold ⌘ and drag the waveform icon closer to the clock, or open Menu Bar Settings."
+            )
+        } else {
+            appState.showMenuBarVisibilityHint = false
+        }
+    }
+
+    private func consumeMenuBarVisibilityHintAllowance() -> Bool {
+        let dismissedKey = "MenuBarVisibilityHintDismissed"
+        guard !UserDefaults.standard.bool(forKey: dismissedKey) else { return false }
+
+        let countKey = "MenuBarVisibilityHintShownCount"
+        let count = UserDefaults.standard.integer(forKey: countKey)
+        guard count < 3 else { return false }
+
+        UserDefaults.standard.set(count + 1, forKey: countKey)
+        return true
+    }
+
+    private func showPopover() -> Bool {
+        statusItem.isVisible = true
+
+        guard let button = statusItem.button, button.window != nil else {
+            return false
+        }
+
+        if !popover.isShown {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+        guard popover.isShown else {
+            return false
+        }
+
+        popover.contentViewController?.view.window?.makeKey()
+        return true
     }
 
     // MARK: - Icon Observation

@@ -151,6 +151,7 @@ struct ReplacementSettings: Codable, Equatable, Sendable {
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
+            Self.createDailyBackupIfNeeded(of: url)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(self)
@@ -159,6 +160,47 @@ struct ReplacementSettings: Codable, Equatable, Sendable {
             NSLog("[MiniWhisper] Failed to write replacements.json: \(error)")
         }
     }
+
+    private static let maxBackups = 2
+
+    private static func createDailyBackupIfNeeded(of url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+        let dir = url.deletingLastPathComponent()
+        let today = Self.backupDateFormatter.string(from: Date())
+        let todayBackup = dir.appendingPathComponent("replacements.json.backup.\(today)")
+        guard !FileManager.default.fileExists(atPath: todayBackup.path) else { return }
+
+        do {
+            try FileManager.default.copyItem(at: url, to: todayBackup)
+        } catch {
+            NSLog("[MiniWhisper] Failed to create daily backup: \(error)")
+            return
+        }
+
+        pruneOldBackups(in: dir)
+    }
+
+    private static func pruneOldBackups(in directory: URL) {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(atPath: directory.path) else { return }
+
+        let backups = contents
+            .filter { $0.hasPrefix("replacements.json.backup.") }
+            .sorted()
+
+        guard backups.count > maxBackups else { return }
+        for name in backups.prefix(backups.count - maxBackups) {
+            try? fm.removeItem(at: directory.appendingPathComponent(name))
+        }
+    }
+
+    private static let backupDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
 
     private static func loadFromFile() -> ReplacementSettings? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
