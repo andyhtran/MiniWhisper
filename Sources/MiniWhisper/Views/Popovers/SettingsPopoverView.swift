@@ -178,6 +178,8 @@ struct SettingsPopoverView: View {
                 if !editModeBehavior.isOff {
                     CleanupPromptRow()
                 }
+
+                OpenMenuBarSettingsRow()
             }
 
         }
@@ -324,18 +326,47 @@ private struct OpenMiniWhisperFolderRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        Button {
+        SettingsLinkRow(
+            icon: "folder.fill",
+            title: "Open MiniWhisper Folder",
+            isHovering: $isHovering
+        ) {
             NSWorkspace.shared.selectFile(
                 nil,
                 inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
-        } label: {
+        }
+    }
+}
+
+private struct OpenMenuBarSettingsRow: View {
+    @State private var isHovering = false
+
+    var body: some View {
+        SettingsLinkRow(
+            icon: "menubar.rectangle",
+            title: "Open Menu Bar Settings",
+            isHovering: $isHovering
+        ) {
+            SystemSettingsLinks.openMenuBarSettings()
+        }
+    }
+}
+
+private struct SettingsLinkRow: View {
+    let icon: String
+    let title: String
+    @Binding var isHovering: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "folder.fill")
+                Image(systemName: icon)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .frame(width: 20)
 
-                Text("Open MiniWhisper Folder")
+                Text(title)
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
 

@@ -3,11 +3,13 @@ import SwiftUI
 enum ToastType {
     case error
     case warning
+    case info
 
     var icon: String {
         switch self {
         case .error: return "xmark.circle.fill"
         case .warning: return "exclamationmark.triangle.fill"
+        case .info: return "info.circle.fill"
         }
     }
 
@@ -15,6 +17,7 @@ enum ToastType {
         switch self {
         case .error: return .red
         case .warning: return .orange
+        case .info: return .accentColor
         }
     }
 }
@@ -77,7 +80,7 @@ struct ToastView: View {
                 isVisible = true
             }
 
-            let delay: TimeInterval = toast.type == .error ? 5 : 3
+            let delay: TimeInterval = toast.type == .warning ? 3 : 5
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 withAnimation(.easeOut(duration: 0.2)) {
                     isVisible = false
