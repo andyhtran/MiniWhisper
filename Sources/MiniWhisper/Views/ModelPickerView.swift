@@ -61,7 +61,7 @@ struct ModelPickerView: View {
                 icon: "globe",
                 title: "Multilingual",
                 subtitle: "Auto-detect language",
-                badge: appState.whisper.modelExists ? nil : "547 MB",
+                badge: appState.whisper.modelExists ? nil : "874 MB",
                 isSelected: appState.transcriptionMode == .multilingual
             ) {
                 appState.switchTranscriptionMode(to: .multilingual)
