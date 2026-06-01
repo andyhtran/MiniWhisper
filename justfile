@@ -30,14 +30,6 @@ dev: kill build package
 build:
     swift build --product MiniWhisper
 
-[group('build')]
-debug-tool:
-    swift build --product MiniWhisperDebug
-
-[group('build')]
-debug-transcribe +args:
-    swift run MiniWhisperDebug transcribe {{args}}
-
 # Create .app bundle (debug)
 [group('build')]
 package:

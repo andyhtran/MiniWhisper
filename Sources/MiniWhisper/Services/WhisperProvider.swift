@@ -46,6 +46,7 @@ final class WhisperContext: @unchecked Sendable {
     static func load(from path: String, vadModelPath: String?) throws -> WhisperContext {
         var params = whisper_context_default_params()
         params.use_gpu = true
+        params.flash_attn = true
 
         guard let ctx = whisper_init_from_file_with_params(path, params) else {
             throw WhisperError.modelLoadFailed
@@ -156,11 +157,11 @@ final class WhisperProvider: Sendable {
     var isDownloading = false
     var downloadProgress: Double = 0.0
 
-    private static let modelFileName = "ggml-large-v3-turbo-q5_0.bin"
-    private static let modelURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin")!
+    private static let modelFileName = "ggml-large-v3-turbo-q8_0.bin"
+    private static let modelURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin")!
 
-    private static let vadModelFileName = "ggml-silero-v5.1.2.bin"
-    private static let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin")!
+    private static let vadModelFileName = "ggml-silero-v6.2.0.bin"
+    private static let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
 
     static var modelsDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -183,6 +184,16 @@ final class WhisperProvider: Sendable {
         FileManager.default.fileExists(atPath: Self.vadModelPath.path)
     }
 
+    private static let currentModelFiles: Set<String> = [modelFileName, vadModelFileName]
+
+    private static func removeStaleModels() {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(atPath: modelsDirectory.path) else { return }
+        for file in contents where file.hasSuffix(".bin") && !currentModelFiles.contains(file) {
+            try? fm.removeItem(at: modelsDirectory.appendingPathComponent(file))
+        }
+    }
+
     func initialize() async throws {
         if context != nil { return }
 
@@ -198,6 +209,8 @@ final class WhisperProvider: Sendable {
             if !vadModelExists {
                 try await downloadVADModel()
             }
+
+            Self.removeStaleModels()
 
             let path = Self.modelPath.path
             let vadPath = Self.vadModelPath.path
