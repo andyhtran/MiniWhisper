@@ -18,7 +18,8 @@ struct WhisperTranscriptionOptions: Sendable {
         WhisperTranscriptionOptions(
             language: .fixed("en"),
             detectLanguage: false,
-            noTimestamps: true,
+            // Decode timestamp tokens for long-audio segmentation; print_timestamps still keeps them hidden.
+            noTimestamps: false,
             singleSegment: false,
             threadCount: max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
         )
