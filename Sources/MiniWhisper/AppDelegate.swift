@@ -60,7 +60,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = VibrancyHostingController(
-            rootView: MenuBarView().environment(appState)
+            rootView: MenuBarView()
+                .environment(appState)
+                .environment(\.updaterController, updaterController)
         )
     }
 
