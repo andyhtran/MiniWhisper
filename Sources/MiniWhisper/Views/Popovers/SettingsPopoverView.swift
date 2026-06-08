@@ -55,6 +55,28 @@ struct SettingsPopoverView: View {
                     .labelsHidden()
                 }
 
+                HStack {
+                    Text("Check for updates")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Button("Check Now") {
+                        (NSApp.delegate as? AppDelegate)?.updaterController
+                            .checkForUpdates(nil)
+                    }
+                    .controlSize(.small)
+                    .disabled((NSApp.delegate as? AppDelegate)?.updaterController.isAvailable != true)
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Preferences")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+
                 HStack(spacing: 4) {
                     Text("Show error notifications")
                         .font(.system(size: 13))
@@ -91,11 +113,24 @@ struct SettingsPopoverView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
                 }
+
+                HStack(spacing: 4) {
+                    Text("Enable replacements")
+                        .font(.system(size: 13))
+                    InfoBadge(text: "Apply find-and-replace rules to every transcription")
+                    Spacer()
+                    Toggle("", isOn: $appState.replacementSettings.enabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+
+                if appState.replacementSettings.enabled {
+                    ClaudeSkillRow()
+                }
             }
 
             Divider()
 
-            // AI editing mode leads — chunkier picker before the toggles.
             VStack(alignment: .leading, spacing: 10) {
                 Text("Editing")
                     .font(.system(size: 11, weight: .semibold))
@@ -148,20 +183,6 @@ struct SettingsPopoverView: View {
                         .labelsHidden()
                     }
                 }
-
-                HStack(spacing: 4) {
-                    Text("Enable replacements")
-                        .font(.system(size: 13))
-                    InfoBadge(text: "Apply find-and-replace rules to every transcription")
-                    Spacer()
-                    Toggle("", isOn: $appState.replacementSettings.enabled)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-
-                if appState.replacementSettings.enabled {
-                    ClaudeSkillRow()
-                }
             }
 
             Divider()
@@ -199,10 +220,9 @@ struct SettingsPopoverView: View {
 
 // MARK: - Claude Code Skill Row
 //
-// Rendered as a sub-row inside the Replacements section. The skill writes
-// rules into `replacements.json`, so it only makes sense to surface when
-// replacements themselves are enabled — otherwise rules would land in the
-// file but never apply to transcriptions.
+// The skill writes rules into `replacements.json`, so it only makes sense
+// to surface when replacements themselves are enabled — otherwise rules
+// would land in the file but never apply to transcriptions.
 
 private struct ClaudeSkillRow: View {
     @Environment(AppState.self) private var appState
