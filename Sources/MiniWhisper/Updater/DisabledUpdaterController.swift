@@ -1,12 +1,10 @@
 import Foundation
 
-private let autoUpdateKey = "autoUpdateEnabled"
-
 @MainActor
 final class DisabledUpdaterController: UpdaterProviding {
     var automaticallyChecksForUpdates: Bool {
-        get { UserDefaults.standard.object(forKey: autoUpdateKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: autoUpdateKey) }
+        get { UserDefaults.standard.object(forKey: UpdaterDefaults.autoUpdateEnabledKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: UpdaterDefaults.autoUpdateEnabledKey) }
     }
     var automaticallyDownloadsUpdates: Bool = false
     let isAvailable: Bool = false

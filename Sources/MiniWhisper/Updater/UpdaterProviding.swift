@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-protocol UpdaterProviding: AnyObject {
+protocol UpdaterProviding: AnyObject, Sendable {
     var automaticallyChecksForUpdates: Bool { get set }
     var automaticallyDownloadsUpdates: Bool { get set }
     var isAvailable: Bool { get }
