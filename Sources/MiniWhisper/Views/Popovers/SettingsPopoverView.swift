@@ -2,12 +2,12 @@ import SwiftUI
 
 struct SettingsPopoverView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.updaterController) private var updaterController
     @StateObject private var launchManager = LaunchAtLoginManager.shared
     @State private var editModeBehavior = EditModeSettings.behavior
     @State private var errorToastsEnabled = GeneralSettings.errorToastsEnabled
     @State private var vadEnabled = VADSettings.enabled
-    @State private var autoUpdateEnabled = (NSApp.delegate as? AppDelegate)?.updaterController
-        .automaticallyChecksForUpdates ?? true
+    @State private var autoUpdateEnabled = true
 
     var body: some View {
         @Bindable var appState = appState
@@ -46,8 +46,7 @@ struct SettingsPopoverView: View {
                             get: { autoUpdateEnabled },
                             set: {
                                 autoUpdateEnabled = $0
-                                (NSApp.delegate as? AppDelegate)?.updaterController
-                                    .automaticallyChecksForUpdates = $0
+                                updaterController?.automaticallyChecksForUpdates = $0
                             }
                         )
                     )
@@ -60,11 +59,10 @@ struct SettingsPopoverView: View {
                         .font(.system(size: 13))
                     Spacer()
                     Button("Check Now") {
-                        (NSApp.delegate as? AppDelegate)?.updaterController
-                            .checkForUpdates(nil)
+                        updaterController?.checkForUpdates(nil)
                     }
                     .controlSize(.small)
-                    .disabled((NSApp.delegate as? AppDelegate)?.updaterController.isAvailable != true)
+                    .disabled(updaterController?.isAvailable != true)
                 }
             }
 
@@ -214,6 +212,7 @@ struct SettingsPopoverView: View {
             editModeBehavior = EditModeSettings.behavior
             errorToastsEnabled = GeneralSettings.errorToastsEnabled
             vadEnabled = VADSettings.enabled
+            autoUpdateEnabled = updaterController?.automaticallyChecksForUpdates ?? true
         }
     }
 }

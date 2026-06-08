@@ -1,4 +1,5 @@
 import Testing
+import SwiftUI
 @testable import MiniWhisper
 
 @Suite("Updater factory")
@@ -23,5 +24,14 @@ struct UpdaterFactoryTests {
 
     @Test func disabledStaticInstanceIsNotReady() {
         #expect(!UpdateStatus.disabled.isUpdateReady)
+    }
+
+    @Test func updaterEnvironmentStoresInjectedController() throws {
+        let updater = DisabledUpdaterController()
+        var values = EnvironmentValues()
+        values.updaterController = updater
+
+        let stored = try #require(values.updaterController)
+        #expect(stored === updater)
     }
 }
