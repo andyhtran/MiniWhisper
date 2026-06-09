@@ -30,8 +30,7 @@ Press **Escape** to cancel a recording. To change the hotkey, click the MiniWhis
 ### Homebrew
 
 ```bash
-brew tap andyhtran/tap
-brew install --cask miniwhisper
+brew install --cask andyhtran/tap/miniwhisper
 ```
 
 To update:
