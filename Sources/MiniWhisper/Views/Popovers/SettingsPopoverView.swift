@@ -1,485 +1,185 @@
+import AppKit
 import SwiftUI
 
 struct SettingsPopoverView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.updaterController) private var updaterController
-    @StateObject private var launchManager = LaunchAtLoginManager.shared
-    @State private var editModeBehavior = EditModeSettings.behavior
     @State private var errorToastsEnabled = GeneralSettings.errorToastsEnabled
     @State private var vadEnabled = VADSettings.enabled
-    @State private var autoUpdateEnabled = true
+    @State private var hasCustomPrompt = CleanupPromptStore.hasCustomPrompt
+
+    let onOpenFullSettings: () -> Void
 
     var body: some View {
-        @Bindable var appState = appState
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsPopoverSectionHeader(title: "Quick Settings", icon: "gearshape")
 
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("General")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
+            errorNotificationsRow
+            trimLongSilencesRow
 
-                HStack {
-                    Text("Start MiniWhisper when you log in")
-                        .font(.system(size: 13))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { launchManager.isEnabled },
-                            set: { launchManager.isEnabled = $0 }
-                        )
-                    )
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                }
-
-                HStack {
-                    Text("Check for updates automatically")
-                        .font(.system(size: 13))
-                    Spacer()
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { autoUpdateEnabled },
-                            set: {
-                                autoUpdateEnabled = $0
-                                updaterController?.automaticallyChecksForUpdates = $0
-                            }
-                        )
-                    )
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                }
-
-                HStack {
-                    Text("Check for updates")
-                        .font(.system(size: 13))
-                    Spacer()
-                    Button("Check Now") {
-                        updaterController?.checkForUpdates(nil)
-                    }
-                    .controlSize(.small)
-                    .disabled(updaterController?.isAvailable != true)
-                }
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Preferences")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                HStack(spacing: 4) {
-                    Text("Show error notifications")
-                        .font(.system(size: 13))
-                    InfoBadge(text: "Show a toast when something fails — recording errors, transcription failures, etc. Turn off if you'd rather the app stay quiet on errors.")
-                    Spacer()
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { errorToastsEnabled },
-                            set: {
-                                errorToastsEnabled = $0
-                                GeneralSettings.errorToastsEnabled = $0
-                            }
-                        )
-                    )
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                }
-
-                HStack {
-                    Text("Trim long silences")
-                        .font(.system(size: 13))
-                    Spacer()
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { vadEnabled },
-                            set: {
-                                vadEnabled = $0
-                                VADSettings.enabled = $0
-                            }
-                        )
-                    )
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                }
-
-                HStack(spacing: 4) {
-                    Text("Enable replacements")
-                        .font(.system(size: 13))
-                    InfoBadge(text: "Apply find-and-replace rules to every transcription")
-                    Spacer()
-                    Toggle("", isOn: $appState.replacementSettings.enabled)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-
-                if appState.replacementSettings.enabled {
-                    ClaudeSkillRow()
-                }
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Editing")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                HStack(spacing: 4) {
-                    Text("AI editing mode")
-                        .font(.system(size: 13))
-                    InfoBadge(text: "Selection — clean up selected text with AI. Cleanup — polish recordings before pasting.")
-                    Spacer()
-                    Picker(
-                        "",
-                        selection: Binding(
-                            get: { editModeBehavior },
-                            set: {
-                                editModeBehavior = $0
-                                EditModeSettings.behavior = $0
-                                appState.editModeBehavior = $0
-                            }
-                        )
-                    ) {
-                        ForEach(EditModeBehavior.allCases, id: \.self) { behavior in
-                            Text(behavior.displayName).tag(behavior)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .fixedSize()
-                }
-
-                if editModeBehavior.selectionEnabled {
-                    HStack(spacing: 4) {
-                        Text("Voice instruction")
-                            .font(.system(size: 13))
-                        InfoBadge(text: "Speak an editing instruction (e.g. \"make this formal\") instead of auto-cleaning the selection.")
-                        Spacer()
-                        Toggle(
-                            "",
-                            isOn: Binding(
-                                get: { appState.voiceEditEnabled },
-                                set: {
-                                    appState.voiceEditEnabled = $0
-                                    EditModeSettings.voiceEdit = $0
-                                }
-                            )
-                        )
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                    }
-                }
+            if appState.editModeBehavior.selectionEnabled {
+                selectedTextActionRow
             }
 
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Files")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                OpenMiniWhisperFolderRow()
-
-                if !editModeBehavior.isOff {
-                    CleanupPromptRow()
-                }
-
-                OpenMenuBarSettingsRow()
-            }
-
-        }
-        .padding(12)
-        .frame(width: 300)
-        .onChange(of: appState.replacementSettings) {
-            appState.replacementSettings.save()
-        }
-        .onAppear {
-            launchManager.refresh()
-            editModeBehavior = EditModeSettings.behavior
-            errorToastsEnabled = GeneralSettings.errorToastsEnabled
-            vadEnabled = VADSettings.enabled
-            autoUpdateEnabled = updaterController?.automaticallyChecksForUpdates ?? true
-        }
-    }
-}
-
-// MARK: - Claude Code Skill Row
-//
-// The skill writes rules into `replacements.json`, so it only makes sense
-// to surface when replacements themselves are enabled — otherwise rules
-// would land in the file but never apply to transcriptions.
-
-private struct ClaudeSkillRow: View {
-    @Environment(AppState.self) private var appState
-    private let manager = ClaudeSkillManager.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text("Claude Code skill")
-                            .font(.system(size: 13))
-                        InfoBadge(text: "Allow Claude to add replacements automatically using /mw-replace")
-                    }
-                    subtitle
-                }
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { manager.isEnabled },
-                        set: { toggle($0) }
+                SettingsPopoverActionRow(
+                    title: "Open MiniWhisper Folder",
+                    icon: "folder"
+                ) {
+                    NSWorkspace.shared.selectFile(
+                        nil,
+                        inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path
                     )
-                )
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .disabled(!manager.claudeCodeInstalled || manager.hasConflict)
-            }
-
-            actionRow
-        }
-        .onAppear { manager.refresh() }
-    }
-
-    // Hidden entirely in the healthy `.upToDate` state — we only surface text
-    // when the user needs to know or act on something.
-    @ViewBuilder
-    private var subtitle: some View {
-        if !manager.claudeCodeInstalled {
-            Text("Claude Code not detected")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if manager.hasConflict {
-            Text("Another skill with this name already exists")
-                .font(.system(size: 11))
-                .foregroundStyle(.orange)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if let statusText {
-            Text(statusText)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.accentColor)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    @ViewBuilder
-    private var actionRow: some View {
-        if manager.hasConflict {
-            HStack {
-                Spacer()
-                Button("Show in Finder") { manager.revealConflictInFinder() }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.accentColor)
-            }
-            .font(.system(size: 11))
-        } else if manager.claudeCodeInstalled, let updateButtonLabel {
-            HStack {
-                Spacer()
-                Button(updateButtonLabel, action: applyUpdate)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.accentColor)
-            }
-            .font(.system(size: 11))
-        }
-    }
-
-    private var statusText: String? {
-        switch manager.syncStatus {
-        case .upToDate: return nil
-        case .updateAvailable: return "Update available"
-        case .modified: return "Modified"
-        case .modifiedAndUpdateAvailable: return "Modified · update available"
-        }
-    }
-
-    private var updateButtonLabel: String? {
-        switch manager.syncStatus {
-        case .upToDate: return nil
-        case .updateAvailable: return "Update"
-        case .modified: return "Reset to default"
-        case .modifiedAndUpdateAvailable: return "Update (overwrites edits)"
-        }
-    }
-
-    private func toggle(_ on: Bool) {
-        do {
-            try on ? manager.enable() : manager.disable()
-        } catch {
-            appState.toast.showError(
-                title: on ? "Couldn't Enable Skill" : "Couldn't Disable Skill",
-                message: error.localizedDescription
-            )
-            manager.refresh()
-        }
-    }
-
-    private func applyUpdate() {
-        do {
-            try manager.applyBundledVersion()
-        } catch {
-            appState.toast.showError(
-                title: "Update Failed",
-                message: error.localizedDescription
-            )
-        }
-    }
-}
-
-private struct OpenMiniWhisperFolderRow: View {
-    @State private var isHovering = false
-
-    var body: some View {
-        SettingsLinkRow(
-            icon: "folder.fill",
-            title: "Open MiniWhisper Folder",
-            isHovering: $isHovering
-        ) {
-            NSWorkspace.shared.selectFile(
-                nil,
-                inFileViewerRootedAtPath: Recording.baseDirectory.deletingLastPathComponent().path)
-        }
-    }
-}
-
-private struct OpenMenuBarSettingsRow: View {
-    @State private var isHovering = false
-
-    var body: some View {
-        SettingsLinkRow(
-            icon: "menubar.rectangle",
-            title: "Open Menu Bar Settings",
-            isHovering: $isHovering
-        ) {
-            SystemSettingsLinks.openMenuBarSettings()
-        }
-    }
-}
-
-private struct SettingsLinkRow: View {
-    let icon: String
-    let title: String
-    @Binding var isHovering: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .frame(width: 20)
-
-                Text(title)
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovering = hovering
-            }
-        }
-    }
-}
-
-// MARK: - Cleanup Prompt Row
-//
-// Edit + Reset affordances for the cleanup-pass system prompt. Only
-// rendered when the AI editing mode includes auto-cleanup (caller gates
-// visibility), so the row is contextually relevant when shown. Reset
-// hides itself further when the on-disk prompt matches the bundled
-// default — no point offering Reset when there's nothing to reset to.
-
-private struct CleanupPromptRow: View {
-    @Environment(AppState.self) private var appState
-    @State private var isHovering = false
-    @State private var hasCustomPrompt = CleanupPromptStore.hasCustomPrompt
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button(action: edit) {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .frame(width: 20)
-
-                    Text("Edit cleanup prompt")
-                        .font(.system(size: 13))
-                        .foregroundColor(.primary)
-
-                    Spacer()
-
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
                 }
+
+                if !appState.editModeBehavior.isOff {
+                    cleanupPromptRow
+                }
+            }
+
+            Divider()
+
+            Button(action: onOpenFullSettings) {
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .frame(width: 16)
+                    Text("Open Settings...")
+                    Spacer()
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(
-                            isHovering
-                                ? Color.primary.opacity(0.06) : Color.primary.opacity(0.04))
+                        .fill(Color.accentColor.opacity(0.12))
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    isHovering = hovering
-                }
+
+            SettingsPopoverActionRow(
+                title: "Check for Updates",
+                icon: "arrow.clockwise",
+                disabled: updaterController?.isAvailable != true
+            ) {
+                updaterController?.checkForUpdates(nil)
+            }
+
+            AppVersionFooter()
+        }
+        .padding(12)
+        .frame(width: 300)
+        .onAppear {
+            errorToastsEnabled = GeneralSettings.errorToastsEnabled
+            vadEnabled = VADSettings.enabled
+            hasCustomPrompt = CleanupPromptStore.hasCustomPrompt
+        }
+    }
+
+    private var errorNotificationsRow: some View {
+        HStack {
+            InfoLabel(
+                title: "Show error notifications",
+                text: "Show a toast when recording, transcription, or other app actions fail."
+            )
+            .font(.system(size: 13))
+
+            Spacer()
+
+            Toggle(
+                "",
+                isOn: Binding(
+                    get: { errorToastsEnabled },
+                    set: { enabled in
+                        errorToastsEnabled = enabled
+                        GeneralSettings.errorToastsEnabled = enabled
+                    }
+                )
+            )
+            .toggleStyle(.switch)
+            .labelsHidden()
+        }
+    }
+
+    private var trimLongSilencesRow: some View {
+        HStack {
+            Text("Trim long silences")
+                .font(.system(size: 13))
+
+            Spacer()
+
+            Toggle(
+                "",
+                isOn: Binding(
+                    get: { vadEnabled },
+                    set: { enabled in
+                        vadEnabled = enabled
+                        VADSettings.enabled = enabled
+                    }
+                )
+            )
+            .toggleStyle(.switch)
+            .labelsHidden()
+        }
+    }
+
+    private var selectedTextActionRow: some View {
+        HStack(spacing: 8) {
+            InfoLabel(
+                title: "Selected text action",
+                text: "Clean automatically rewrites selected text immediately. Dictate instruction lets you speak how to change it."
+            )
+            .font(.system(size: 13))
+
+            Spacer(minLength: 8)
+
+            Picker(
+                "",
+                selection: Binding(
+                    get: { appState.voiceEditEnabled },
+                    set: { enabled in
+                        appState.voiceEditEnabled = enabled
+                        EditModeSettings.voiceEdit = enabled
+                    }
+                )
+            ) {
+                Text("Clean automatically").tag(false)
+                Text("Dictate instruction").tag(true)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .frame(maxWidth: 145)
+        }
+    }
+
+    private var cleanupPromptRow: some View {
+        HStack(spacing: 8) {
+            SettingsPopoverActionRow(
+                title: "Edit Cleanup Prompt",
+                icon: "doc.text"
+            ) {
+                editCleanupPrompt()
             }
 
             if hasCustomPrompt {
-                HStack {
-                    Spacer()
-                    Button("Reset to default", action: confirmReset)
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Color.accentColor)
-                        .font(.system(size: 11))
-                }
+                Button("Reset", action: confirmResetCleanupPrompt)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+                    .buttonStyle(.borderless)
             }
         }
-        .onAppear { hasCustomPrompt = CleanupPromptStore.hasCustomPrompt }
     }
 
-    private func edit() {
+    private func editCleanupPrompt() {
         do {
             try CleanupPromptStore.seedIfMissing()
             NSWorkspace.shared.open(CleanupPromptStore.fileURL)
-            // Re-check on next appear in case the user edited and saved
-            // — Reset visibility tracks the on-disk diff.
             hasCustomPrompt = CleanupPromptStore.hasCustomPrompt
         } catch {
             appState.toast.showError(
@@ -489,7 +189,7 @@ private struct CleanupPromptRow: View {
         }
     }
 
-    private func confirmReset() {
+    private func confirmResetCleanupPrompt() {
         let alert = NSAlert()
         alert.messageText = "Reset cleanup prompt?"
         alert.informativeText =
@@ -497,7 +197,9 @@ private struct CleanupPromptRow: View {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Reset")
         alert.addButton(withTitle: "Cancel")
+
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+
         do {
             try CleanupPromptStore.resetToDefault()
             hasCustomPrompt = false
@@ -507,5 +209,51 @@ private struct CleanupPromptRow: View {
                 message: error.localizedDescription
             )
         }
+    }
+}
+
+private struct SettingsPopoverSectionHeader: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .textCase(.uppercase)
+                .tracking(0.5)
+        }
+        .foregroundStyle(.secondary)
+    }
+}
+
+private struct SettingsPopoverActionRow: View {
+    let title: String
+    let icon: String
+    var disabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .frame(width: 16)
+                Text(title)
+                Spacer()
+            }
+            .font(.system(size: 13))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primary.opacity(0.04))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1)
     }
 }

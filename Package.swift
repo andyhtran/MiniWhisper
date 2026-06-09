@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "MiniWhisper", targets: ["MiniWhisper"]),
+        .executable(name: "miniwhispercli", targets: ["MiniWhisperCLI"]),
     ],
     dependencies: [
         .package(
@@ -30,6 +31,17 @@ let package = Package(
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency"),
                 .define("ENABLE_SPARKLE"),
+            ]
+        ),
+        .executableTarget(
+            name: "MiniWhisperCLI",
+            dependencies: [
+                "FluidAudio",
+                "whisper",
+            ],
+            path: "Sources/MiniWhisperCLI",
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
             ]
         ),
         .binaryTarget(

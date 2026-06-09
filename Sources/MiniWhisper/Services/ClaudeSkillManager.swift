@@ -7,14 +7,15 @@ import os.log
 private let log = Logger(subsystem: Logger.subsystem, category: "ClaudeSkillManager")
 
 /// Ships the `mw-replace` skill from the app bundle into the user's Documents
-/// folder and, when toggled on, exposes it to Claude Code via a symlink at
+/// folder and, when toggled on, copies it into Claude Code's skill directory at
 /// `~/.claude/skills/mw-replace`.
 ///
 /// Truth model is hash-based, not version-numbered:
 ///   - The app bundle carries the canonical `SKILL.md`.
-///   - `~/Documents/MiniWhisper/skills/mw-replace/SKILL.md` is the live copy.
+///   - `~/Documents/MiniWhisper/skills/mw-replace/SKILL.md` is the editable copy.
+///   - `~/.claude/skills/mw-replace/SKILL.md` is a real installed copy when enabled.
 ///   - A `.mw-sha` sibling marker holds the sha256 of whatever we last wrote.
-/// Comparing the bundled hash, the live-file hash, and the marker tells us
+/// Comparing the bundled hash, the active-file hash, and the marker tells us
 /// whether the user has edited the file *and* whether a newer version is
 /// available — orthogonally.
 @Observable
@@ -87,8 +88,16 @@ final class ClaudeSkillManager {
         claudeDir.appendingPathComponent("skills")
     }
 
-    private var claudeSymlink: URL {
+    private var claudeInstallDir: URL {
         claudeSkillsDir.appendingPathComponent(skillName)
+    }
+
+    private var claudeSkillFile: URL {
+        claudeInstallDir.appendingPathComponent(skillFileName)
+    }
+
+    private var claudeShaMarker: URL {
+        claudeInstallDir.appendingPathComponent(markerFileName)
     }
 
     private init() {
@@ -126,7 +135,7 @@ final class ClaudeSkillManager {
             }
 
             let currentHash = try Self.sha256(of: documentsSkillFile)
-            let lastSynced = readMarker()
+            let lastSynced = readMarker(at: documentsShaMarker)
 
             if currentHash == lastSynced && bundledHash != lastSynced {
                 try writeBundledCopy(from: bundledURL, hash: bundledHash)
@@ -134,6 +143,12 @@ final class ClaudeSkillManager {
             }
         } catch {
             log.error("syncBundleToDocumentsIfClean failed: \(error.localizedDescription)")
+        }
+
+        do {
+            try syncEnabledClaudeInstallIfClean()
+        } catch {
+            log.error("syncEnabledClaudeInstallIfClean failed: \(error.localizedDescription)")
         }
 
         refresh()
@@ -150,20 +165,29 @@ final class ClaudeSkillManager {
     }
 
     private func computeToggleState() -> (enabled: Bool, conflict: Bool) {
-        // Nothing at the symlink path → no symlink, no conflict.
-        guard FileManager.default.fileExists(atPath: claudeSymlink.path)
-            || (try? FileManager.default.attributesOfItem(atPath: claudeSymlink.path)) != nil
+        guard itemExists(at: claudeInstallDir)
         else {
             return (false, false)
         }
-        return isOurSymlink() ? (true, false) : (false, true)
+
+        return isManagedClaudeInstall() || isLegacySymlinkInstall()
+            ? (true, false)
+            : (false, true)
     }
 
-    /// True only if `~/.claude/skills/mw-replace` is a symlink pointing at our
-    /// Documents skill dir. A real file/dir, or a symlink pointing elsewhere,
-    /// counts as a conflict (not ours, don't touch).
-    private func isOurSymlink() -> Bool {
-        let path = claudeSymlink.path
+    private func isManagedClaudeInstall() -> Bool {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: claudeInstallDir.path),
+            (attrs[.type] as? FileAttributeType) == .typeDirectory
+        else {
+            return false
+        }
+
+        return FileManager.default.fileExists(atPath: claudeSkillFile.path)
+            && FileManager.default.fileExists(atPath: claudeShaMarker.path)
+    }
+
+    private func isLegacySymlinkInstall() -> Bool {
+        let path = claudeInstallDir.path
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
             (attrs[.type] as? FileAttributeType) == .typeSymbolicLink,
             let target = try? FileManager.default.destinationOfSymbolicLink(atPath: path)
@@ -174,15 +198,16 @@ final class ClaudeSkillManager {
     }
 
     private func computeSyncStatus() -> SyncStatus {
+        let syncTarget = activeSyncTarget()
         guard let bundledHash,
-            FileManager.default.fileExists(atPath: documentsSkillFile.path)
+            FileManager.default.fileExists(atPath: syncTarget.skillFile.path)
         else {
             return .upToDate
         }
 
         do {
-            let currentHash = try Self.sha256(of: documentsSkillFile)
-            let lastSynced = readMarker()
+            let currentHash = try Self.sha256(of: syncTarget.skillFile)
+            let lastSynced = readMarker(at: syncTarget.markerFile)
 
             let modified = (currentHash != lastSynced)
             let updateAvailable = (bundledHash != lastSynced)
@@ -207,37 +232,41 @@ final class ClaudeSkillManager {
         do {
             try FileManager.default.createDirectory(
                 at: claudeSkillsDir, withIntermediateDirectories: true)
+            try ensureDocumentsCopyExists()
+        } catch let error as SkillError {
+            throw error
         } catch {
             throw SkillError.io(error)
         }
 
-        if isOurSymlink() {
+        if isManagedClaudeInstall() {
             refresh()
-            return  // already ours — idempotent
+            return
         }
-        if (try? FileManager.default.attributesOfItem(atPath: claudeSymlink.path)) != nil {
-            throw SkillError.conflictingItemExists(path: claudeSymlink.path)
+        if itemExists(at: claudeInstallDir), !isLegacySymlinkInstall() {
+            throw SkillError.conflictingItemExists(path: claudeInstallDir.path)
         }
 
         do {
-            try FileManager.default.createSymbolicLink(
-                at: claudeSymlink, withDestinationURL: documentsSkillDir)
+            try installClaudeCopyFromDocuments()
+        } catch let error as SkillError {
+            throw error
         } catch {
             throw SkillError.io(error)
         }
         refresh()
     }
 
-    /// Safety-checked: only removes the symlink if it's ours. A non-symlink or
-    /// a symlink pointing elsewhere is left alone (shouldn't have been toggled
-    /// on in the first place).
     func disable() throws {
-        guard isOurSymlink() else {
+        guard isManagedClaudeInstall() || isLegacySymlinkInstall() else {
             refresh()
             return
         }
         do {
-            try FileManager.default.removeItem(at: claudeSymlink)
+            if isManagedClaudeInstall() {
+                try preserveInstalledEditsIfNeeded()
+            }
+            try FileManager.default.removeItem(at: claudeInstallDir)
         } catch {
             throw SkillError.io(error)
         }
@@ -254,6 +283,9 @@ final class ClaudeSkillManager {
         }
         do {
             try writeBundledCopy(from: bundledURL, hash: bundledHash)
+            if isManagedClaudeInstall() {
+                try writeSkillFile(from: bundledURL, hash: bundledHash, to: claudeInstallDir)
+            }
         } catch {
             throw SkillError.io(error)
         }
@@ -262,30 +294,118 @@ final class ClaudeSkillManager {
 
     // MARK: - Navigation
 
-    /// Opens `~/.claude/skills/` with `mw-replace` selected so the user can
-    /// inspect or delete whatever's blocking the symlink.
     func revealConflictInFinder() {
         NSWorkspace.shared.selectFile(
-            claudeSymlink.path,
+            claudeInstallDir.path,
             inFileViewerRootedAtPath: claudeSkillsDir.path)
     }
 
     // MARK: - Helpers
 
-    private func writeBundledCopy(from source: URL, hash: String) throws {
+    private func activeSyncTarget() -> (skillFile: URL, markerFile: URL) {
+        if isManagedClaudeInstall() {
+            return (claudeSkillFile, claudeShaMarker)
+        }
+        return (documentsSkillFile, documentsShaMarker)
+    }
+
+    private func syncEnabledClaudeInstallIfClean() throws {
+        if isLegacySymlinkInstall() {
+            try installClaudeCopyFromDocuments()
+            return
+        }
+
+        guard isManagedClaudeInstall(),
+              let bundledURL = bundledSkillFile,
+              let bundledHash
+        else {
+            return
+        }
+
+        let currentHash = try Self.sha256(of: claudeSkillFile)
+        let lastSynced = readMarker(at: claudeShaMarker)
+        guard currentHash == lastSynced, bundledHash != lastSynced else { return }
+
+        try writeSkillFile(from: bundledURL, hash: bundledHash, to: claudeInstallDir)
+    }
+
+    private func ensureDocumentsCopyExists() throws {
+        guard !FileManager.default.fileExists(atPath: documentsSkillFile.path) else { return }
+        guard let bundledURL = bundledSkillFile, let bundledHash else {
+            throw SkillError.bundleResourceMissing
+        }
+
+        try writeBundledCopy(from: bundledURL, hash: bundledHash)
+    }
+
+    private func installClaudeCopyFromDocuments() throws {
+        if itemExists(at: claudeInstallDir) {
+            if isLegacySymlinkInstall() || isManagedClaudeInstall() {
+                try FileManager.default.removeItem(at: claudeInstallDir)
+            } else {
+                throw SkillError.conflictingItemExists(path: claudeInstallDir.path)
+            }
+        }
+
+        try FileManager.default.createDirectory(
+            at: claudeInstallDir, withIntermediateDirectories: true)
+
+        let data = try Data(contentsOf: documentsSkillFile)
+        try data.write(to: claudeSkillFile, options: .atomic)
+
+        let marker = readMarker(at: documentsShaMarker)
+        if marker.isEmpty {
+            let hash = try Self.sha256(of: documentsSkillFile)
+            try hash.write(to: claudeShaMarker, atomically: true, encoding: .utf8)
+        } else {
+            try marker.write(to: claudeShaMarker, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func preserveInstalledEditsIfNeeded() throws {
+        let currentHash = try Self.sha256(of: claudeSkillFile)
+        let lastSynced = readMarker(at: claudeShaMarker)
+        guard !lastSynced.isEmpty, currentHash != lastSynced else { return }
+
         try FileManager.default.createDirectory(
             at: documentsSkillDir, withIntermediateDirectories: true)
 
-        let data = try Data(contentsOf: source)
+        let data = try Data(contentsOf: claudeSkillFile)
         try data.write(to: documentsSkillFile, options: .atomic)
-        try hash.write(to: documentsShaMarker, atomically: true, encoding: .utf8)
+        // Keep the previous marker so the preserved Documents copy still
+        // classifies as user-modified after disabling the Claude install.
+        try lastSynced.write(to: documentsShaMarker, atomically: true, encoding: .utf8)
     }
 
-    private func readMarker() -> String {
-        guard let contents = try? String(contentsOf: documentsShaMarker, encoding: .utf8) else {
+    private func writeBundledCopy(from source: URL, hash: String) throws {
+        try writeSkillFile(from: source, hash: hash, to: documentsSkillDir)
+    }
+
+    private func writeSkillFile(from source: URL, hash: String, to directory: URL) throws {
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+
+        let data = try Data(contentsOf: source)
+        try data.write(to: directory.appendingPathComponent(skillFileName), options: .atomic)
+        try hash.write(
+            to: directory.appendingPathComponent(markerFileName),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    private func readMarker(at url: URL) -> String {
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
             return ""
         }
         return contents.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func itemExists(at url: URL) -> Bool {
+        // `fileExists` is false for dangling symlinks; attributes still let us
+        // treat that path as occupied instead of overwriting it.
+        FileManager.default.fileExists(atPath: url.path)
+            || (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
     }
 
     private static func sha256(of url: URL) throws -> String {
