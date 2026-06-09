@@ -8,6 +8,27 @@ enum FnKeyCode {
     static func isFnKey(_ keyCode: UInt16) -> Bool { keyCodes.contains(keyCode) }
 }
 
+// Left/right variants of the four standard modifiers (Command, Shift, Option,
+// Control). Excludes Fn (63/179) and Caps Lock (57). Needed for double-tap
+// shortcuts, which must know the *specific* key: CGEventFlags only report the
+// modifier category (e.g. .maskAlternate), not which physical side was used.
+enum ModifierKeyCode {
+    static let keyCodes: Set<UInt16> = [54, 55, 56, 60, 58, 61, 59, 62]
+    static func isModifierKey(_ keyCode: UInt16) -> Bool { keyCodes.contains(keyCode) }
+
+    /// Whether the modifier identified by `keyCode` is currently held, per the
+    /// event's flags — lets us tell a press (flag now set) from a release.
+    static func flagPresent(forKeyCode keyCode: UInt16, in flags: CGEventFlags) -> Bool {
+        switch keyCode {
+        case 54, 55: return flags.contains(.maskCommand)
+        case 56, 60: return flags.contains(.maskShift)
+        case 58, 61: return flags.contains(.maskAlternate)
+        case 59, 62: return flags.contains(.maskControl)
+        default: return false
+        }
+    }
+}
+
 extension CGEventFlags {
     var modifierFlags: NSEvent.ModifierFlags {
         var m = NSEvent.ModifierFlags()
@@ -26,6 +47,11 @@ struct CustomShortcut: Codable, Equatable, Hashable {
     let control: Bool
     let shift: Bool
     let fn: Bool
+    /// When true, this shortcut fires on a *double-tap* of the modifier key
+    /// named by `keyCode` (e.g. 61 = Right Option) with every modifier flag
+    /// false — structurally the same idea as the Fn-only case. Defaults to
+    /// false so existing combo / Fn-only shortcuts are unchanged.
+    let doubleTap: Bool
 
     init(
         keyCode: UInt16,
@@ -33,7 +59,8 @@ struct CustomShortcut: Codable, Equatable, Hashable {
         option: Bool = false,
         control: Bool = false,
         shift: Bool = false,
-        fn: Bool = false
+        fn: Bool = false,
+        doubleTap: Bool = false
     ) {
         self.keyCode = keyCode
         self.command = command
@@ -41,9 +68,28 @@ struct CustomShortcut: Codable, Equatable, Hashable {
         self.control = control
         self.shift = shift
         self.fn = fn
+        self.doubleTap = doubleTap
+    }
+
+    // Custom decoder so shortcuts persisted before `doubleTap` existed (and so
+    // lack the key) still decode. A throw here would make
+    // CustomShortcutStorage.loadAll() hit its `try?` fallback and silently wipe
+    // every customised shortcut on upgrade.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        keyCode = try c.decode(UInt16.self, forKey: .keyCode)
+        command = try c.decode(Bool.self, forKey: .command)
+        option = try c.decode(Bool.self, forKey: .option)
+        control = try c.decode(Bool.self, forKey: .control)
+        shift = try c.decode(Bool.self, forKey: .shift)
+        fn = try c.decode(Bool.self, forKey: .fn)
+        doubleTap = try c.decodeIfPresent(Bool.self, forKey: .doubleTap) ?? false
     }
 
     func matches(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, fnPressed: Bool) -> Bool {
+        // Double-tap shortcuts are matched separately (via flagsChanged timing),
+        // never as a key-combo.
+        guard !doubleTap else { return false }
         guard self.keyCode == keyCode else { return false }
         return self.command == modifiers.contains(.command)
             && self.option == modifiers.contains(.option)
@@ -53,6 +99,9 @@ struct CustomShortcut: Codable, Equatable, Hashable {
     }
 
     var compactDisplayString: String {
+        if doubleTap {
+            return "Double-tap \(keyCodeDisplayName)"
+        }
         var str = ""
         if control { str += "Ctrl+" }
         if option { str += "Option+" }
@@ -68,7 +117,7 @@ struct CustomShortcut: Codable, Equatable, Hashable {
     }
 
     var isFnOnly: Bool {
-        FnKeyCode.isFnKey(keyCode) && !command && !option && !control && !shift
+        FnKeyCode.isFnKey(keyCode) && !command && !option && !control && !shift && !doubleTap
     }
 
     static func keyCodeToDisplayName(_ keyCode: UInt16) -> String {
@@ -148,6 +197,14 @@ struct CustomShortcut: Codable, Equatable, Hashable {
         case kVK_ANSI_Slash: return "/"
         case 179: return "Fn"
         case 63: return "Fn"
+        case 55: return "Left ⌘"
+        case 54: return "Right ⌘"
+        case 56: return "Left ⇧"
+        case 60: return "Right ⇧"
+        case 58: return "Left ⌥"
+        case 61: return "Right ⌥"
+        case 59: return "Left ⌃"
+        case 62: return "Right ⌃"
         default: return "Key \(keyCode)"
         }
     }

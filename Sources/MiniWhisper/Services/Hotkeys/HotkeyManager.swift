@@ -52,6 +52,15 @@ final class HotkeyManager {
         shortcutMonitor.onKeyDown(for: .toggleRecording) { [weak self] in
             self?.delegate?.hotkeyDidToggleRecording()
         }
+        // When toggle is bound to a double-tap modifier shortcut: a double-tap
+        // toggles (start), and a single tap of the same modifier toggles only
+        // while recording is active — i.e. "double-tap to start, tap to stop".
+        // The same modifier-combo guard in DoubleTapDetector prevents ⌥+key
+        // from stopping it.
+        let checker = RecordingActiveChecker(manager: self)
+        shortcutMonitor.setSingleTapCheck(for: .toggleRecording) {
+            checker.isActive
+        }
     }
 
     private func setupCancelRecording() {

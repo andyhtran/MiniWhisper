@@ -32,8 +32,23 @@ final class ShortcutMatcher: @unchecked Sendable {
         lock.unlock()
 
         for (name, shortcut) in current {
-            if shortcut.isFnOnly { continue }
+            if shortcut.isFnOnly || shortcut.doubleTap { continue }
             if shortcut.matches(keyCode: keyCode, modifiers: modifiers, fnPressed: fnPressed) {
+                return MatchResult(name: name)
+            }
+        }
+        return nil
+    }
+
+    /// Find a double-tap shortcut bound to the given modifier key code
+    /// (e.g. 61 = Right Option). Returns nil if no shortcut double-taps that key.
+    func findDoubleTapShortcut(forKeyCode keyCode: UInt16) -> MatchResult? {
+        lock.lock()
+        let current = shortcuts
+        lock.unlock()
+
+        for (name, shortcut) in current {
+            if shortcut.doubleTap && shortcut.keyCode == keyCode {
                 return MatchResult(name: name)
             }
         }

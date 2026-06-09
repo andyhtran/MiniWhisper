@@ -62,6 +62,9 @@ struct ShortcutRecorderView: View {
             onFnOnly: {
                 handleFnOnly()
             },
+            onDoubleTap: { keyCode in
+                handleDoubleTap(keyCode)
+            },
             onEscape: {
                 stopRecording()
             }
@@ -113,6 +116,33 @@ struct ShortcutRecorderView: View {
                                 return nil
                             }
                         }
+                    } else if ModifierKeyCode.isModifierKey(keyCode) {
+                        // Detect a double-tap of a standard modifier (Option/Cmd/
+                        // Ctrl/Shift, left or right) and record it as a double-tap
+                        // shortcut. Combos and Fn-only recording are unaffected.
+                        let now = CFAbsoluteTimeGetCurrent()
+                        if ModifierKeyCode.flagPresent(forKeyCode: keyCode, in: flags) {
+                            ctx.modifierDownKeyCode = keyCode
+                            ctx.modifierDownTime = now
+                            ctx.otherKeyDuringModifier = false
+                        } else if ctx.modifierDownKeyCode == keyCode {
+                            let held = now - (ctx.modifierDownTime ?? now)
+                            ctx.modifierDownKeyCode = nil
+                            if !ctx.otherKeyDuringModifier && held < ctx.maxTapDuration {
+                                if ctx.lastModifierTapKeyCode == keyCode,
+                                   let last = ctx.lastModifierTapTime,
+                                   (now - last) < ctx.doubleTapWindow {
+                                    ctx.lastModifierTapKeyCode = nil
+                                    DispatchQueue.main.async { ctx.onDoubleTap(keyCode) }
+                                    return nil
+                                } else {
+                                    ctx.lastModifierTapKeyCode = keyCode
+                                    ctx.lastModifierTapTime = now
+                                }
+                            } else {
+                                ctx.lastModifierTapKeyCode = nil
+                            }
+                        }
                     }
 
                     return Unmanaged.passUnretained(event)
@@ -122,6 +152,10 @@ struct ShortcutRecorderView: View {
                     if ctx.fnKeyDown {
                         ctx.otherKeyPressedDuringFn = true
                     }
+                    // A real key means any held modifier is part of a combo, not
+                    // a tap — break the pending double-tap chain.
+                    ctx.otherKeyDuringModifier = true
+                    ctx.lastModifierTapKeyCode = nil
 
                     if keyCode == UInt16(kVK_Escape) {
                         DispatchQueue.main.async { ctx.onEscape() }
@@ -192,6 +226,13 @@ struct ShortcutRecorderView: View {
         stopRecording()
     }
 
+    private func handleDoubleTap(_ keyCode: UInt16) {
+        // keyCode is the modifier itself (e.g. 61 = Right Option); doubleTap
+        // marks it as a tap-twice trigger rather than a held modifier.
+        shortcut = CustomShortcut(keyCode: keyCode, doubleTap: true)
+        stopRecording()
+    }
+
     private func stopRecording() {
         isRecording = false
 
@@ -214,6 +255,7 @@ final class RecorderContext {
 
     let onKeyDown: (UInt16, NSEvent.ModifierFlags, Bool) -> Void
     let onFnOnly: () -> Void
+    let onDoubleTap: (UInt16) -> Void
     let onEscape: () -> Void
 
     var fnKeyDown: Bool = false
@@ -221,13 +263,23 @@ final class RecorderContext {
     var fnPressTime: CFAbsoluteTime?
     let maxTapDuration: TimeInterval = 0.5
 
+    // Double-tap-of-a-modifier recording state.
+    var modifierDownKeyCode: UInt16?
+    var modifierDownTime: CFAbsoluteTime?
+    var otherKeyDuringModifier: Bool = false
+    var lastModifierTapKeyCode: UInt16?
+    var lastModifierTapTime: CFAbsoluteTime?
+    let doubleTapWindow: TimeInterval = 0.3
+
     init(
         onKeyDown: @escaping (UInt16, NSEvent.ModifierFlags, Bool) -> Void,
         onFnOnly: @escaping () -> Void,
+        onDoubleTap: @escaping (UInt16) -> Void,
         onEscape: @escaping () -> Void
     ) {
         self.onKeyDown = onKeyDown
         self.onFnOnly = onFnOnly
+        self.onDoubleTap = onDoubleTap
         self.onEscape = onEscape
     }
 }
