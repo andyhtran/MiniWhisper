@@ -2,14 +2,14 @@ import Testing
 @testable import MiniWhisper
 
 struct WhisperProviderTests {
-    @Test func transcriptionUsesEnglishWithTimestampedSegments() {
+    @Test func transcriptionUsesAutoLanguageWithTimestampedSegments() {
         let options = WhisperContext.transcriptionOptions()
 
         switch options.language {
         case .fixed(let language):
-            #expect(language == "en")
+            Issue.record("Expected Whisper language to use auto detection, got \(language)")
         case .auto:
-            Issue.record("Expected Whisper language to be pinned to English")
+            break
         }
         #expect(!options.detectLanguage)
         #expect(!options.noTimestamps)

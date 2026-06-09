@@ -16,7 +16,7 @@ struct WhisperTranscriptionOptions: Sendable {
 
     static func `default`() -> WhisperTranscriptionOptions {
         WhisperTranscriptionOptions(
-            language: .fixed("en"),
+            language: .auto,
             detectLanguage: false,
             // Decode timestamp tokens for long-audio segmentation; print_timestamps still keeps them hidden.
             noTimestamps: false,
@@ -75,6 +75,8 @@ final class WhisperContext: @unchecked Sendable {
                 free(languageCString)
             }
         }
+        // whisper.cpp treats nil/empty/"auto" language as transcription
+        // auto-detection; `detect_language` is a separate language-only mode.
         params.detect_language = options.detectLanguage
         params.print_special = false
         params.print_progress = false

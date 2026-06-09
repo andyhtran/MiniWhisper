@@ -5,6 +5,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/version.env"
 
 APP_NAME="MiniWhisper"
+CLI_NAME="miniwhispercli"
 BUILD_CONFIG="${1:-release}"
 BUILD_DIR=".build/${BUILD_CONFIG}"
 APP_BUNDLE="build/${APP_NAME}.app"
@@ -26,6 +27,7 @@ fi
 echo "Building $APP_NAME ($BUILD_CONFIG)..."
 
 swift build -c "$BUILD_CONFIG" --product "$APP_NAME"
+swift build -c "$BUILD_CONFIG" --product "$CLI_NAME"
 
 echo "Creating app bundle..."
 rm -rf "$APP_BUNDLE"
@@ -33,6 +35,8 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
+cp "$BUILD_DIR/$CLI_NAME" "$APP_BUNDLE/Contents/Resources/"
+chmod +x "$APP_BUNDLE/Contents/Resources/$CLI_NAME"
 
 # Embed whisper.framework with proper macOS versioned structure
 FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
@@ -48,6 +52,7 @@ if [ -d "$BUILD_DIR/whisper.framework" ]; then
     ln -sf Versions/Current/Resources "$FRAMEWORKS_DIR/whisper.framework/Resources"
     ln -sf Versions/Current/whisper "$FRAMEWORKS_DIR/whisper.framework/whisper"
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/Resources/$CLI_NAME" 2>/dev/null || true
 fi
 
 # Embed Sparkle.framework

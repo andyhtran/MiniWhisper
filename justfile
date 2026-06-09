@@ -19,6 +19,9 @@ dev: kill build package
     for fw in "{{install_path}}"/Contents/Frameworks/*.framework; do
         [ -d "$fw" ] && codesign --force --sign "{{dev_signing_id}}" "$fw"
     done
+    if [ -f "{{install_path}}"/Contents/Resources/miniwhispercli ]; then
+        codesign --force --sign "{{dev_signing_id}}" "{{install_path}}"/Contents/Resources/miniwhispercli
+    fi
     codesign --force --sign "{{dev_signing_id}}" \
         --entitlements build/MiniWhisper.entitlements \
         "{{install_path}}"
@@ -29,6 +32,7 @@ dev: kill build package
 [group('build')]
 build:
     swift build --product MiniWhisper
+    swift build --product miniwhispercli
 
 # Create .app bundle (debug)
 [group('build')]

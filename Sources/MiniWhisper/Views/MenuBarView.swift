@@ -586,6 +586,7 @@ private struct PermissionRow: View {
 
 private struct FooterBarView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.updaterController) private var updaterController
     @StateObject private var launchManager = LaunchAtLoginManager.shared
     @State private var showHistory = false
     @State private var showReplacements = false
@@ -647,9 +648,15 @@ private struct FooterBarView: View {
                 showSettings.toggle()
             }
             .popover(isPresented: $showSettings, arrowEdge: .bottom) {
-                SettingsPopoverView()
-                    .popoverFocusSink()
-                    .resignsResponderOnClose()
+                SettingsPopoverView {
+                    showSettings = false
+                    MiniWhisperSettingsWindowController.shared.open(
+                        appState: appState,
+                        updaterController: updaterController
+                    )
+                }
+                .popoverFocusSink()
+                .resignsResponderOnClose()
             }
 
             FooterButton(icon: "xmark.circle", label: "Quit", color: .red) {
@@ -737,4 +744,3 @@ private struct FooterButton: View {
         }
     }
 }
-

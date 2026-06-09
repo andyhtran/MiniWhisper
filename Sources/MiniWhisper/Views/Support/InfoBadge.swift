@@ -34,3 +34,17 @@ struct InfoBadge: View {
             }
     }
 }
+
+struct InfoLabel: View {
+    let title: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+            InfoBadge(text: text)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+    }
+}

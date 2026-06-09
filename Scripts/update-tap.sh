@@ -39,7 +39,8 @@ cask "miniwhisper" do
   homepage "https://github.com/andyhtran/MiniWhisper"
 
   auto_updates true
-  depends_on macos: ">= :sonoma"
+  # bare symbol means ">= Sonoma"
+  depends_on macos: :sonoma
 
   app "MiniWhisper.app"
 
