@@ -73,10 +73,17 @@ extension AppState {
         let sampleRate = recorder.actualSampleRate
         let inputDeviceName = recorder.actualInputDeviceName
 
+        // Sub-1s clips are nearly always an accidental toggle double-tap,
+        // and whisper tends to hallucinate filler on them. Edit mode uses a
+        // looser 0.5s threshold because it starts deliberately (a selection
+        // must exist first), so accidental triggers are rare there.
         guard duration >= 1.0 else {
             await recorder.cancelRecording()
             recorder.reset()
             currentRecordingId = nil
+            toast.showError(
+                title: "Recording Too Short",
+                message: "Nothing transcribed — try again and speak a bit longer.")
             return
         }
 
