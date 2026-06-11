@@ -65,10 +65,7 @@ enum SpokenSymbols {
         // `and/or`); the trailing-space-only one catches a transcript-leading
         // slash command (`slash verify …` → `/verify …`), which the padded
         // form can't reach. Known accepted false positive: verb slash
-        // ("slash the budget" → "/the budget"). The trailing-space form is
-        // literal-substring matched, so it relies on the longer
-        // `backslash`/`back slash` rules running first (longest-find-first)
-        // to consume those words before it can see them.
+        // ("slash the budget" → "/the budget").
         ReplacementRule(find: " slash ", replace: "/"),
         ReplacementRule(find: "slash ", replace: "/"),
         ReplacementRule(find: "backslash", replace: "\\"),

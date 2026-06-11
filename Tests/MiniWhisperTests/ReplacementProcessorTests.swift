@@ -30,6 +30,10 @@ struct ReplacementProcessorTests {
         // Non-word-edge rule falls back to substring so `c++` still works.
         ("using c++ daily", [ReplacementRule(find: "c++", replace: "cpp")], "using cpp daily"),
 
+        // Boundaries are per-edge: a trailing-space `find` still anchors its
+        // word-character side, so it can't start mid-word.
+        ("buffoo bar foo bar", [ReplacementRule(find: "foo ", replace: "X")], "buffoo bar Xbar"),
+
         // Rules cascade within a pass, left-to-right. Equal-length `find`s
         // keep user order via stable sort.
         ("a b", [ReplacementRule(find: "a", replace: "b"), ReplacementRule(find: "b", replace: "c")], "c c"),

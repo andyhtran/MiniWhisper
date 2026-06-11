@@ -1,8 +1,11 @@
 import Foundation
 
-/// Word-boundary find/replace (`\bfoo\b`, case-insensitive) when both edges
-/// of `find` are ASCII word-characters; falls back to literal substring so
-/// rules like `c++` or ` dash ` still work. Rules apply longest-`find`-first
+/// Case-insensitive find/replace where each edge of `find` independently
+/// gets a `\b` word boundary if that edge is an ASCII word-character: plain
+/// words anchor both sides, `c++` anchors only its left, and space-padded
+/// rules like `"open bracket "` anchor their word side so they can never
+/// fire inside a larger word ("reopen"). Pure non-word-edge rules
+/// (` dash `) still match literally. Rules apply longest-`find`-first
 /// so specific phrases win over substrings of themselves (`new york times`
 /// beats `new york`); stable sort preserves user order on length ties.
 struct ReplacementProcessor: Sendable {
@@ -22,9 +25,9 @@ struct ReplacementProcessor: Sendable {
             guard rule.enabled, !find.isEmpty else { continue }
 
             let escapedFind = NSRegularExpression.escapedPattern(for: find)
-            let pattern = Self.hasWordEdges(find)
-                ? "\\b\(escapedFind)\\b"
-                : escapedFind
+            let leading = Self.isAsciiWordChar(find.first) ? "\\b" : ""
+            let trailing = Self.isAsciiWordChar(find.last) ? "\\b" : ""
+            let pattern = leading + escapedFind + trailing
 
             // `$` and `\` in the replacement must stay literal — user rules
             // aren't regex templates.
@@ -48,13 +51,8 @@ struct ReplacementProcessor: Sendable {
         return result
     }
 
-    private static func hasWordEdges(_ find: String) -> Bool {
-        guard let first = find.first, let last = find.last else { return false }
-        return isAsciiWordChar(first) && isAsciiWordChar(last)
-    }
-
-    private static func isAsciiWordChar(_ c: Character) -> Bool {
-        guard c.isASCII else { return false }
+    private static func isAsciiWordChar(_ c: Character?) -> Bool {
+        guard let c, c.isASCII else { return false }
         return c.isLetter || c.isNumber || c == "_"
     }
 }

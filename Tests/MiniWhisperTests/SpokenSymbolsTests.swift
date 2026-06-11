@@ -91,6 +91,11 @@ struct SpokenSymbolsTests {
         // `\b` prevents "dot env" from hiding inside "envelope".
         "the envelope is sealed",
 
+        // Space-padded rules anchor their word edge: `open bracket ` must
+        // not fire inside "reopen", nor ` close bracket` inside "bracketing".
+        "let's reopen bracket two",
+        "discuss close bracketing today",
+
         // "caret" substring inside "catastrophe" — and we don't ship a
         // caret rule anyway, so this is doubly safe.
         "catastrophe",
