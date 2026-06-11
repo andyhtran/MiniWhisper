@@ -12,6 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyManager: HotkeyManager?
     private var hotkeyDelegate: HotkeyDelegateImpl?
     private var appNapActivity: NSObjectProtocol?
+    private var processingAnimationTimer: Timer?
+    private var processingAnimationPhase: Double = 0
     let updaterController: UpdaterProviding = makeUpdaterController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -149,11 +151,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateIcon() {
+        let isWorking =
+            appState.recorder.state == .processing || appState.isEditModeProcessing
+        syncProcessingAnimation(active: isWorking)
         statusItem.button?.image = MenuBarIconRenderer.render(
             state: appState.recorder.state,
             meterLevel: appState.recorder.meterLevel,
-            isEditModeProcessing: appState.isEditModeProcessing
+            isEditModeProcessing: appState.isEditModeProcessing,
+            processingPhase: processingAnimationPhase
         )
+    }
+
+    /// During transcription/edit calls no observed property changes, so the
+    /// pulsing icon needs its own frame timer; observation alone would leave
+    /// it frozen for the whole working window.
+    private func syncProcessingAnimation(active: Bool) {
+        if active, processingAnimationTimer == nil {
+            // 10 fps, full pulse cycle every 1.2s.
+            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.processingAnimationPhase =
+                        (self.processingAnimationPhase + 1.0 / 12.0)
+                        .truncatingRemainder(dividingBy: 1.0)
+                    self.updateIcon()
+                }
+            }
+            // `.common` keeps the pulse running while menus/popovers track.
+            RunLoop.main.add(timer, forMode: .common)
+            processingAnimationTimer = timer
+        } else if !active, let timer = processingAnimationTimer {
+            timer.invalidate()
+            processingAnimationTimer = nil
+            processingAnimationPhase = 0
+        }
     }
 
     private func setupServices() async {
