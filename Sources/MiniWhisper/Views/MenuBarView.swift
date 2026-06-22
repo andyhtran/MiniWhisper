@@ -70,17 +70,19 @@ private struct RecordingHeaderView: View {
                 Text(formatDuration(appState.recorder.currentDuration))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.secondary)
-            } else if appState.isModelDownloading {
+            } else if appState.recorder.state.isIdle,
+                      let progress = appState.modelLoadState.progress
+            {
                 HStack(spacing: 6) {
-                    ProgressView(value: appState.modelDownloadProgress)
+                    ProgressView(value: progress)
                         .progressViewStyle(.linear)
                         .frame(width: 80)
                         .controlSize(.small)
-                    Text("\(Int(appState.modelDownloadProgress * 100))%")
+                    Text("\(Int(progress * 100))%")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
-            } else if !appState.isModelLoaded {
+            } else if shouldShowModelSpinner {
                 ProgressView()
                     .controlSize(.small)
             }
@@ -89,6 +91,11 @@ private struct RecordingHeaderView: View {
 
     private var statusIcon: String {
         if !appState.permissions.allGranted {
+            return "exclamationmark.triangle.fill"
+        }
+        if appState.recorder.state.isIdle,
+           appState.modelLoadState.failureMessage != nil
+        {
             return "exclamationmark.triangle.fill"
         }
         switch appState.recorder.state {
@@ -102,6 +109,11 @@ private struct RecordingHeaderView: View {
     private var statusColor: Color {
         if !appState.permissions.allGranted {
             return .orange
+        }
+        if appState.recorder.state.isIdle,
+           appState.modelLoadState.failureMessage != nil
+        {
+            return .red
         }
         switch appState.recorder.state {
         case .idle: return .secondary
@@ -118,16 +130,46 @@ private struct RecordingHeaderView: View {
         if appState.isEditModeProcessing { return editingStatusText }
         switch appState.recorder.state {
         case .idle:
-            if appState.isModelDownloading { return "Downloading Model..." }
             if appState.transcriptionMode == .custom
                 && !appState.customProviderSettings.isConfigured
             {
                 return "Configure Endpoint"
             }
-            return appState.isModelLoaded ? "Ready" : "Loading Model..."
+            switch appState.modelLoadState {
+            case .idle:
+                return "Loading Model..."
+            case .loading(let phase, _):
+                return loadingStatusText(for: phase)
+            case .ready:
+                return "Ready"
+            case .failed:
+                return "Model Load Failed"
+            }
         case .recording: return "Recording"
         case .processing: return "Transcribing..."
         case .error(let msg): return msg
+        }
+    }
+
+    private var shouldShowModelSpinner: Bool {
+        guard appState.recorder.state.isIdle else { return false }
+        guard appState.modelLoadState.failureMessage == nil else { return false }
+        if appState.transcriptionMode == .custom
+            && !appState.customProviderSettings.isConfigured
+        {
+            return false
+        }
+        return !appState.isModelLoaded
+    }
+
+    private func loadingStatusText(for phase: ModelLoadPhase) -> String {
+        switch phase {
+        case .checking:
+            return "Checking Model..."
+        case .downloading:
+            return "Downloading Model..."
+        case .preparing:
+            return "Preparing Model..."
         }
     }
 

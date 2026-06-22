@@ -29,6 +29,11 @@ final class AppState: Sendable {
     var autoCleanupEnabled: Bool { editModeBehavior.autoCleanupEnabled }
     var voiceEditEnabled: Bool = EditModeSettings.voiceEdit
     var showMenuBarVisibilityHint = false
+    var modelLoadState = ModelLoadState.idle
+
+    /// Tags preload/switch tasks so stale progress from an old model choice
+    /// cannot flip the header after the user has moved on.
+    private var modelLoadGeneration = 0
 
     /// Set while a voice-edit recording is active. Holds the captured
     /// selection + saved pasteboard so the second shortcut press can
@@ -71,18 +76,11 @@ final class AppState: Sendable {
     var onRecordingStarted: (() -> Void)?
     var onRecordingEnded: (() -> Void)?
 
-    var isModelLoaded: Bool {
-        switch transcriptionMode {
-        case .default: return parakeet.isInitialized
-        case .multilingual: return whisper.isInitialized
-        case .custom: return customProviderSettings.isConfigured
-        }
-    }
-
-    var isModelDownloading: Bool { whisper.isDownloading }
-    var modelDownloadProgress: Double { whisper.downloadProgress }
+    var isModelLoaded: Bool { modelLoadState.isReady }
 
     init() {
+        modelLoadState = initialModelLoadState(for: transcriptionMode)
+
         recorder.onRecordingInterrupted = { [weak self] message in
             guard let self else { return }
             stopDurationChecks()
@@ -114,21 +112,7 @@ final class AppState: Sendable {
     // MARK: - Initialization
 
     func preloadModel() {
-        Task {
-            do {
-                switch transcriptionMode {
-                case .default:
-                    try await parakeet.initialize()
-                case .multilingual:
-                    guard whisper.modelExists else { return }
-                    try await whisper.initialize()
-                case .custom:
-                    break
-                }
-            } catch {
-                toast.showError(title: "Model Load Failed", message: error.localizedDescription)
-            }
-        }
+        loadSelectedTranscriptionModel()
     }
 
     func switchTranscriptionMode(to mode: TranscriptionMode) {
@@ -152,20 +136,75 @@ final class AppState: Sendable {
 
         transcriptionMode = mode
         TranscriptionModeStorage.save(mode)
+        loadSelectedTranscriptionModel()
+    }
 
-        Task {
+    func refreshCustomTranscriptionReadiness() {
+        guard transcriptionMode == .custom else { return }
+        modelLoadGeneration += 1
+        modelLoadState = initialModelLoadState(for: .custom)
+    }
+
+    private func loadSelectedTranscriptionModel() {
+        let mode = transcriptionMode
+        modelLoadGeneration += 1
+        let generation = modelLoadGeneration
+
+        guard mode != .custom else {
+            modelLoadState = initialModelLoadState(for: mode)
+            return
+        }
+
+        modelLoadState = .loading(phase: .checking, progress: nil)
+
+        Task { [weak self] in
+            guard let self else { return }
             do {
+                let progressHandler = self.makeModelProgressHandler(for: mode, generation: generation)
                 switch mode {
                 case .default:
-                    try await parakeet.initialize()
+                    try await self.parakeet.initialize(progressHandler: progressHandler)
                 case .multilingual:
-                    try await whisper.initialize()
+                    try await self.whisper.initialize(progressHandler: progressHandler)
                 case .custom:
-                    break
+                    return
                 }
+
+                guard self.isCurrentModelLoad(mode: mode, generation: generation) else { return }
+                self.modelLoadState = .ready
             } catch {
-                toast.showError(title: "Model Load Failed", message: error.localizedDescription)
+                guard self.isCurrentModelLoad(mode: mode, generation: generation) else { return }
+                self.modelLoadState = .failed(error.localizedDescription)
+                self.toast.showError(title: "Model Load Failed", message: error.localizedDescription)
             }
+        }
+    }
+
+    private func makeModelProgressHandler(
+        for mode: TranscriptionMode,
+        generation: Int
+    ) -> ModelLoadProgressHandler {
+        { [weak self] progress in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.isCurrentModelLoad(mode: mode, generation: generation),
+                      !self.modelLoadState.isReady,
+                      self.modelLoadState.failureMessage == nil else { return }
+                self.modelLoadState = .loading(phase: progress.phase, progress: progress.progress)
+            }
+        }
+    }
+
+    private func isCurrentModelLoad(mode: TranscriptionMode, generation: Int) -> Bool {
+        generation == modelLoadGeneration && mode == transcriptionMode
+    }
+
+    private func initialModelLoadState(for mode: TranscriptionMode) -> ModelLoadState {
+        switch mode {
+        case .default, .multilingual:
+            return .idle
+        case .custom:
+            return customProviderSettings.isConfigured ? .ready : .idle
         }
     }
 

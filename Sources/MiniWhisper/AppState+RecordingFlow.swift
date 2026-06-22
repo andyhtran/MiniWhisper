@@ -15,6 +15,8 @@ extension AppState {
                 toast.showError(
                     title: "Not Configured",
                     message: "Configure your custom endpoint before recording.")
+            } else if let message = modelLoadState.failureMessage {
+                toast.showError(title: "Model Load Failed", message: message)
             } else {
                 toast.showError(
                     title: "Model Not Ready",

@@ -197,7 +197,7 @@ final class WhisperProvider: Sendable {
         }
     }
 
-    func initialize() async throws {
+    func initialize(progressHandler: ModelLoadProgressHandler? = nil) async throws {
         if context != nil { return }
 
         if let existing = initTask {
@@ -207,14 +207,17 @@ final class WhisperProvider: Sendable {
 
         let task = Task<Void, Error> {
             if !modelExists {
-                try await downloadModel()
+                progressHandler?(ModelLoadProgress(phase: .downloading, progress: 0))
+                try await downloadModel(progressHandler: progressHandler)
             }
             if !vadModelExists {
+                progressHandler?(ModelLoadProgress(phase: .downloading, progress: nil))
                 try await downloadVADModel()
             }
 
             Self.removeStaleModels()
 
+            progressHandler?(ModelLoadProgress(phase: .preparing, progress: nil))
             let path = Self.modelPath.path
             let vadPath = Self.vadModelPath.path
             let loaded = try WhisperContext.load(from: path, vadModelPath: vadPath)
@@ -276,7 +279,7 @@ final class WhisperProvider: Sendable {
         initTask = nil
     }
 
-    private func downloadModel() async throws {
+    private func downloadModel(progressHandler: ModelLoadProgressHandler? = nil) async throws {
         let dir = Self.modelsDirectory
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -292,6 +295,7 @@ final class WhisperProvider: Sendable {
         delegate.onProgress = { [weak self] progress in
             Task { @MainActor [weak self] in
                 self?.downloadProgress = progress
+                progressHandler?(ModelLoadProgress(phase: .downloading, progress: progress))
             }
         }
 

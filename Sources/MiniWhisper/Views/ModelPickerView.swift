@@ -25,6 +25,7 @@ struct ModelPickerView: View {
         .frame(width: 320)
         .onChange(of: appState.customProviderSettings) {
             appState.customProviderSettings.save()
+            appState.refreshCustomTranscriptionReadiness()
         }
         .onChange(of: appState.customEditProviderSettings) {
             appState.customEditProviderSettings.save()
