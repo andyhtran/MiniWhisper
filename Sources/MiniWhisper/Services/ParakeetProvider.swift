@@ -14,7 +14,7 @@ final class ParakeetProvider {
         initializationTask = nil
     }
 
-    func initialize() async throws {
+    func initialize(progressHandler: ModelLoadProgressHandler? = nil) async throws {
         if asrManager != nil { return }
 
         if let existing = initializationTask {
@@ -23,7 +23,12 @@ final class ParakeetProvider {
         }
 
         let task = Task<Void, Error> {
-            let models = try await AsrModels.downloadAndLoad(version: .v3)
+            let models = try await AsrModels.downloadAndLoad(
+                version: .v3,
+                progressHandler: { progress in
+                    progressHandler?(Self.mapProgress(progress))
+                }
+            )
             let manager = AsrManager(config: .default)
             try await manager.initialize(models: models)
             asrManager = manager
@@ -62,6 +67,19 @@ final class ParakeetProvider {
             duration: processingTime,
             model: "parakeet-tdt-v3"
         )
+    }
+
+    nonisolated private static func mapProgress(_ progress: DownloadUtils.DownloadProgress) -> ModelLoadProgress {
+        switch progress.phase {
+        case .listing:
+            return ModelLoadProgress(phase: .checking, progress: nil)
+        case .downloading(_, let totalFiles) where totalFiles == 0:
+            return ModelLoadProgress(phase: .preparing, progress: nil)
+        case .downloading:
+            return ModelLoadProgress(phase: .downloading, progress: progress.fractionCompleted)
+        case .compiling:
+            return ModelLoadProgress(phase: .preparing, progress: progress.fractionCompleted)
+        }
     }
 
     private func convertToSegments(_ result: ASRResult) -> [TranscriptionSegment] {

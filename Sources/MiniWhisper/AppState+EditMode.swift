@@ -35,6 +35,8 @@ extension AppState {
                     toast.showError(
                         title: "Not Configured",
                         message: "Configure your custom transcription endpoint before using edit mode.")
+                } else if let message = modelLoadState.failureMessage {
+                    toast.showError(title: "Model Load Failed", message: message)
                 } else {
                     toast.showError(
                         title: "Model Not Ready",

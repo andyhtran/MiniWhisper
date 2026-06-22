@@ -8,6 +8,8 @@ struct FormatPopoverView: View {
     @State private var dropTrailingPunctuation = FormattingSettings.dropTrailingPunctuation
     @State private var spokenSymbolsEnabled = SpokenSymbolsSettings.enabled
     @State private var appendTrailingSpace = FormattingSettings.appendTrailingSpace
+    @State private var showSymbolsList = false
+    @State private var isHoveringSymbolsInfo = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -79,7 +81,22 @@ struct FormatPopoverView: View {
             HStack(spacing: 4) {
                 Text("Spoken symbols")
                     .font(.system(size: 13))
-                InfoBadge(text: "Convert spoken phrases like 'open bracket' into symbols")
+                // Click-to-open list instead of an InfoBadge: a hover popover
+                // and a click popover on the same anchor fight each other.
+                Button {
+                    showSymbolsList.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundColor(isHoveringSymbolsInfo ? .primary : .secondary)
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    isHoveringSymbolsInfo = hovering
+                }
+                .popover(isPresented: $showSymbolsList, arrowEdge: .trailing) {
+                    SpokenSymbolsListView()
+                }
                 Spacer()
                 Toggle(
                     "",

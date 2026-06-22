@@ -46,7 +46,9 @@ struct SpokenSymbolsTests {
         // Common symbols.
         ("I need a semicolon here", "I need a ; here"),
         ("use a backslash here", "use a \\ here"),
+        ("use a back slash here", "use a \\ here"),
         ("cats ampersand dogs", "cats & dogs"),
+        ("ls pipe grep node", "ls | grep node"),
         ("wrap in backtick marks", "wrap in ` marks"),
         ("wrap in back tick marks", "wrap in ` marks"),
         ("tilde expansion", "~ expansion"),
@@ -57,6 +59,13 @@ struct SpokenSymbolsTests {
         ("foo hyphen bar", "foo-bar"),
         ("state hyphen of hyphen the hyphen art", "state-of-the-art"),
         ("dry hyphen run flag", "dry-run flag"),
+
+        // Slash joins like hyphen mid-sentence; the transcript-leading form
+        // produces slash commands.
+        ("src slash components", "src/components"),
+        ("designer slash developer", "designer/developer"),
+        ("and slash or", "and/or"),
+        ("slash verify the change", "/verify the change"),
 
         // Language names.
         ("c plus plus is my favorite", "c++ is my favorite"),
@@ -82,6 +91,11 @@ struct SpokenSymbolsTests {
         // `\b` prevents "dot env" from hiding inside "envelope".
         "the envelope is sealed",
 
+        // Space-padded rules anchor their word edge: `open bracket ` must
+        // not fire inside "reopen", nor ` close bracket` inside "bracketing".
+        "let's reopen bracket two",
+        "discuss close bracketing today",
+
         // "caret" substring inside "catastrophe" — and we don't ship a
         // caret rule anyway, so this is doubly safe.
         "catastrophe",
@@ -98,11 +112,13 @@ struct SpokenSymbolsTests {
         // through and never become `^`.
         "I have a carrot for lunch",
 
-        // Documents the excluded `pipe` → `|` rule.
-        "gas pipe is leaking",
+        // `\b` keeps the bare `pipe` rule out of larger words.
+        "the pipeline is broken",
+        "piping hot coffee",
 
-        // Documents the excluded `slash` → `/` rule.
-        "a slash of rain",
+        // Trailing-position "slash" has no trailing space, so neither slash
+        // form fires; only mid-sentence and transcript-leading forms convert.
+        "press slash",
 
         // Plain input with no triggers passes through untouched.
         "hello world this is a normal sentence",

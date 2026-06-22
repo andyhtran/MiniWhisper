@@ -13,23 +13,25 @@ final class FnStateMachine: @unchecked Sendable {
     private var usedAsModifier = false
     private var activeFnOnlyShortcut: CustomShortcutName?
 
-    private let maxTapDurationNs: UInt64 = 500_000_000  // 0.5s
+    /// A down-state this stale can only mean macOS dropped the matching keyUp.
+    private let stuckDownThresholdNs: UInt64 = 5_000_000_000  // 5s
 
     func processFnKeyDown(captureTime: CFAbsoluteTime, hwTimestamp: UInt64) -> Bool {
         lock.lock()
         defer { lock.unlock() }
 
-        guard !isFnKeyDown else { return false }
-
-        // Detect stuck state: macOS sometimes drops the Fn keyUp event
-        // (e.g. during app switches or sleep/wake), leaving isFnKeyDown stuck true.
-        if fnDownTimestamp > 0 {
-            let elapsed = hwTimestamp - fnDownTimestamp
-            if elapsed > 5_000_000_000 {
-                isFnKeyDown = false
-                usedAsModifier = false
-            }
+        // Stuck-state recovery must run before the re-entry guard: macOS
+        // sometimes drops the Fn keyUp (app switches, sleep/wake), leaving
+        // isFnKeyDown stuck true — exactly the case where the guard below
+        // would otherwise swallow this press.
+        if isFnKeyDown, fnDownTimestamp > 0,
+            hwTimestamp - fnDownTimestamp > stuckDownThresholdNs
+        {
+            isFnKeyDown = false
+            usedAsModifier = false
         }
+
+        guard !isFnKeyDown else { return false }
 
         isFnKeyDown = true
         fnDownTimestamp = hwTimestamp
@@ -50,11 +52,8 @@ final class FnStateMachine: @unchecked Sendable {
             return .usedAsModifier
         }
 
-        let duration = hwTimestamp - fnDownTimestamp
-        if duration <= maxTapDurationNs {
-            return .fnKeyUp
-        }
-
+        // Hold duration is deliberately irrelevant: press-and-hold-then-
+        // release toggles the same as a quick tap.
         return .fnKeyUp
     }
 

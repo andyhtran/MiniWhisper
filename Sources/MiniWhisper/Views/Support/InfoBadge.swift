@@ -7,8 +7,8 @@ import SwiftUI
 /// Drop next to a label inside an `HStack(spacing: 4)`:
 ///
 ///     HStack(spacing: 4) {
-///         Text("Spoken symbols")
-///         InfoBadge(text: "Convert spoken phrases like 'open bracket' …")
+///         Text("Trailing space")
+///         InfoBadge(text: "Append a space after each pasted transcription …")
 ///         Spacer()
 ///         Toggle(…)
 ///     }

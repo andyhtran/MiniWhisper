@@ -3,8 +3,8 @@ import Foundation
 /// Ideal checklist:
 /// 1. **Natural-English safety.** The `find` phrase has no common non-symbol
 ///    meaning in everyday speech. If the phrase regularly appears in casual
-///    speech with a different meaning (e.g. "mad dash", "slash of rain",
-///    "gas pipe"), it will cause false positives and must be excluded.
+///    speech with a different meaning (e.g. "mad dash", "dash of salt"),
+///    it will cause false positives and must be excluded.
 /// 2. **STT homophone safety.** The transcriber reliably produces the exact
 ///    `find` phrase when the symbol is intended, and does not produce it when
 ///    the user means a homophone. Example failure: `caret` vs `carrot` — STT
@@ -60,7 +60,19 @@ enum SpokenSymbols {
         // Space-eating so `foo hyphen bar` → `foo-bar` (kebab-case, CLI
         // flags, URL slugs). `dash` stays excluded — "mad dash" et al.
         ReplacementRule(find: " hyphen ", replace: "-"),
+        // Two forms: the space-eating one joins paths and conjunctions
+        // (`src slash components` → `src/components`, `and slash or` →
+        // `and/or`); the trailing-space-only one catches a transcript-leading
+        // slash command (`slash verify …` → `/verify …`), which the padded
+        // form can't reach. Known accepted false positive: verb slash
+        // ("slash the budget" → "/the budget").
+        ReplacementRule(find: " slash ", replace: "/"),
+        ReplacementRule(find: "slash ", replace: "/"),
         ReplacementRule(find: "backslash", replace: "\\"),
+        // STT sometimes splits the compound, same as "back tick" below.
+        ReplacementRule(find: "back slash", replace: "\\"),
+        // Bare word relies on `\b`, so "pipeline" / "piping" never fire.
+        ReplacementRule(find: "pipe", replace: "|"),
         ReplacementRule(find: "ampersand", replace: "&"),
         ReplacementRule(find: "backtick", replace: "`"),
         ReplacementRule(find: "back tick", replace: "`"),

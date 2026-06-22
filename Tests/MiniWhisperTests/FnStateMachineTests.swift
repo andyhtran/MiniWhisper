@@ -36,18 +36,35 @@ struct FnStateMachineTests {
         #expect(!sm.processFnKeyDown(captureTime: 0, hwTimestamp: 100_000_000))
     }
 
-    @Test func stuckStateResetsAfterFiveSeconds() {
+    @Test func stuckKeyDownRecoversAfterFiveSeconds() {
         let sm = makeSM()
-        // Simulate stuck: down but never up
-        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 1_000_000_000)
+        // Down whose matching keyUp the OS dropped (sleep/wake, app switch).
+        #expect(sm.processFnKeyDown(captureTime: 0, hwTimestamp: 1_000_000_000))
 
-        // Manually reset isFnKeyDown to simulate the stuck guard path.
-        // The guard `!isFnKeyDown` blocks a second down, but the stuck detection
-        // only runs when isFnKeyDown is already false with a stale timestamp.
-        // Instead, test that after reset + 6 seconds, a new down succeeds.
-        sm.reset()
-        let downOk = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 6_000_000_000)
+        // >5s later the stale down-state must be discarded and this press
+        // accepted as new.
+        let downOk = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 7_000_000_000)
         #expect(downOk)
+        #expect(sm.isFnKeyDown)
+
+        // The recovered press completes a normal tap.
+        let result = sm.processFnKeyUp(captureTime: 0, hwTimestamp: 7_100_000_000)
+        #expect(result == .fnKeyUp)
+    }
+
+    @Test func repeatKeyDownUnderStuckThresholdIsStillRejected() {
+        let sm = makeSM()
+        #expect(sm.processFnKeyDown(captureTime: 0, hwTimestamp: 1_000_000_000))
+        // 2s later — a genuine held key, not a stuck state.
+        #expect(!sm.processFnKeyDown(captureTime: 0, hwTimestamp: 3_000_000_000))
+    }
+
+    @Test func longHoldReleaseStillReturnsFnKeyUp() {
+        let sm = makeSM()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 1_000_000_000)
+        // 3s hold — duration is deliberately irrelevant on release.
+        let result = sm.processFnKeyUp(captureTime: 0, hwTimestamp: 4_000_000_000)
+        #expect(result == .fnKeyUp)
     }
 
     @Test func resetClearsAllState() {
