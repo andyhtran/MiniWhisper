@@ -79,16 +79,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleLaunchRevealIfNeeded(_ notification: Notification) {
         let isDefaultLaunch = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool
             ?? true
-        guard isDefaultLaunch else { return }
+        guard isDefaultLaunch, isMenuBarVisibilityHintAvailable else { return }
 
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
-            self?.revealMenuBarInterface()
+            try? await Task.sleep(for: .milliseconds(1000))
+            self?.revealMenuBarInterface(requiresHint: true)
         }
     }
 
-    private func revealMenuBarInterface() {
+    private func revealMenuBarInterface(requiresHint: Bool = false) {
         let shouldShowHint = consumeMenuBarVisibilityHintAllowance()
+        guard !requiresHint || shouldShowHint else {
+            appState.showMenuBarVisibilityHint = false
+            return
+        }
 
         if showPopover() {
             appState.showMenuBarVisibilityHint = shouldShowHint
@@ -103,14 +107,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func consumeMenuBarVisibilityHintAllowance() -> Bool {
+    private var isMenuBarVisibilityHintAvailable: Bool {
         let dismissedKey = "MenuBarVisibilityHintDismissed"
         guard !UserDefaults.standard.bool(forKey: dismissedKey) else { return false }
 
         let countKey = "MenuBarVisibilityHintShownCount"
-        let count = UserDefaults.standard.integer(forKey: countKey)
-        guard count < 3 else { return false }
+        return UserDefaults.standard.integer(forKey: countKey) < 3
+    }
 
+    private func consumeMenuBarVisibilityHintAllowance() -> Bool {
+        guard isMenuBarVisibilityHintAvailable else { return false }
+
+        let countKey = "MenuBarVisibilityHintShownCount"
+        let count = UserDefaults.standard.integer(forKey: countKey)
         UserDefaults.standard.set(count + 1, forKey: countKey)
         return true
     }
