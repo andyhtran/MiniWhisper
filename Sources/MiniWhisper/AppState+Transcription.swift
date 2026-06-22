@@ -199,6 +199,9 @@ extension AppState {
             toast.showError(title: "Transcription Failed", message: error.localizedDescription)
 
             // Save failed recording metadata (audio file may or may not exist)
+            let fileSize =
+                (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64)
+                ?? 0
             let recording = Recording(
                 id: recordingId,
                 createdAt: Date(),
@@ -206,14 +209,17 @@ extension AppState {
                     duration: duration,
                     sampleRate: sampleRate,
                     channels: 1,
-                    fileSize: 0,
+                    fileSize: fileSize,
                     inputDevice: inputDeviceName,
                     vadApplied: vadApplied
                 ),
                 transcription: nil,
                 configuration: RecordingConfiguration(
                     voiceModel: transcriptionMode.modelDisplayName,
-                    language: "en",
+                    // No detection result exists on failure; the app always
+                    // requests auto-detect, so record the configuration
+                    // rather than guessing a language.
+                    language: "auto",
                     provider: transcriptionMode.rawValue
                 ),
                 status: .failed

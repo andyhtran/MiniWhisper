@@ -23,34 +23,24 @@ final class PasteboardService: @unchecked Sendable {
     func copyAndPaste(_ text: String) {
         logger.info("copyAndPaste called with \(text.count) characters")
 
-        let pasteboard = NSPasteboard.general
-
         let savedContents = saveCurrentPasteboardContents()
-
-        let changeCountBefore = pasteboard.changeCount
 
         guard copy(text) else {
             logger.error("Failed to copy text to clipboard")
             return
         }
 
-        let changeCountAfter = pasteboard.changeCount
+        logger.info("Copy succeeded, simulating paste...")
 
-        if changeCountAfter > changeCountBefore {
-            logger.info("Copy succeeded, simulating paste...")
+        // 50ms: let the frontmost app's run loop process the clipboard change before pasting
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.simulatePaste()
 
-            // 50ms: let the frontmost app's run loop process the clipboard change before pasting
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.simulatePaste()
-
-                // 300ms: wait for the target app to read the pasted content before restoring
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self?.restorePasteboardContents(savedContents)
-                    self?.logger.info("Clipboard restored")
-                }
+            // 300ms: wait for the target app to read the pasted content before restoring
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self?.restorePasteboardContents(savedContents)
+                self?.logger.info("Clipboard restored")
             }
-        } else {
-            logger.error("Copy did not change clipboard")
         }
     }
 
