@@ -3,10 +3,9 @@ import Foundation
 @MainActor
 final class DisabledUpdaterController: UpdaterProviding {
     var automaticallyChecksForUpdates: Bool {
-        get { UserDefaults.standard.object(forKey: UpdaterDefaults.autoUpdateEnabledKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: UpdaterDefaults.autoUpdateEnabledKey) }
+        get { UpdaterDefaults.savedAutoUpdateEnabled() }
+        set { UpdaterDefaults.setAutoUpdateEnabled(newValue) }
     }
-    var automaticallyDownloadsUpdates: Bool = false
     let isAvailable: Bool = false
     let unavailableReason: String?
     let updateStatus = UpdateStatus()

@@ -130,6 +130,10 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
     <string>${SU_PUBLIC_ED_KEY}</string>
     <key>SUEnableAutomaticChecks</key>
     <${AUTO_CHECKS}/>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
 </dict>
 </plist>
 PLIST

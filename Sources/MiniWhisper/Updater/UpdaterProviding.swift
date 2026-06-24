@@ -3,7 +3,6 @@ import Foundation
 @MainActor
 protocol UpdaterProviding: AnyObject, Sendable {
     var automaticallyChecksForUpdates: Bool { get set }
-    var automaticallyDownloadsUpdates: Bool { get set }
     var isAvailable: Bool { get }
     var unavailableReason: String? { get }
     var updateStatus: UpdateStatus { get }
