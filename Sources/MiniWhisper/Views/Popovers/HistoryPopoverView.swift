@@ -163,9 +163,9 @@ private struct HistoryPopoverRow: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.8)))
                     }
                 }
-            } else if recording.status == .cancelled {
+            } else if recording.status == .cancelled || recording.status == .failed {
                 if recording.canRetranscribe {
-                    Button("Re-transcribe") {
+                    Button(retryButtonTitle) {
                         appState.retranscribe(recording)
                     }
                     .buttonStyle(.plain)
@@ -200,6 +200,9 @@ private struct HistoryPopoverRow: View {
         }
         if recording.status == .cancelled {
             return "Canceled recording"
+        }
+        if recording.status == .failed {
+            return "Transcription failed"
         }
         return "No transcription"
     }
@@ -262,6 +265,11 @@ private struct HistoryPopoverRow: View {
                     model: recording.configuration.voiceModel))
             }
             return parts.joined(separator: " · ")
+        }
+        if recording.status == .failed {
+            return friendlyVoiceModelName(
+                provider: recording.configuration.provider,
+                model: recording.configuration.voiceModel)
         }
         return nil
     }
@@ -347,6 +355,10 @@ private struct HistoryPopoverRow: View {
     private func formatEditDuration(_ seconds: TimeInterval) -> String {
         let value = seconds.formatted(.number.precision(.fractionLength(1)))
         return "\(value)s"
+    }
+
+    private var retryButtonTitle: String {
+        recording.status == .failed ? "Retry" : "Re-transcribe"
     }
 
     private var isReTranscribeDisabled: Bool {

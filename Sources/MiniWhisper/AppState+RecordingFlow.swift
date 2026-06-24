@@ -49,12 +49,14 @@ extension AppState {
 
         let dir = Recording.baseDirectory.appendingPathComponent(recordingId)
         let audioURL = dir.appendingPathComponent("audio.wav")
+        saveInProgressRecording(id: recordingId, inputDeviceName: resolvedDevice.resolvedDeviceName)
 
         do {
             try await recorder.startRecording(to: audioURL, resolvedDevice: resolvedDevice)
             startDurationChecks()
             onRecordingStarted?()
         } catch {
+            recordingStore.discard(id: recordingId)
             toast.showError(title: "Recording Failed", message: error.localizedDescription)
             recorder.reset()
             currentRecordingId = nil
@@ -80,8 +82,12 @@ extension AppState {
         // looser 0.5s threshold because it starts deliberately (a selection
         // must exist first), so accidental triggers are rare there.
         guard duration >= 1.0 else {
+            let recordingId = currentRecordingId
             await recorder.cancelRecording()
             recorder.reset()
+            if let recordingId {
+                recordingStore.discard(id: recordingId)
+            }
             currentRecordingId = nil
             toast.showError(
                 title: "Recording Too Short",
@@ -90,6 +96,9 @@ extension AppState {
         }
 
         guard let audioURL = await recorder.stopRecording() else {
+            if let id = currentRecordingId {
+                recordingStore.discardIfStillInProgress(id: id)
+            }
             recorder.reset()
             currentRecordingId = nil
             return
@@ -114,6 +123,58 @@ extension AppState {
         )
     }
 
+    private func saveInProgressRecording(id: String, inputDeviceName: String) {
+        let recording = Recording(
+            id: id,
+            createdAt: Date(),
+            recording: RecordingInfo(
+                duration: 0,
+                sampleRate: 0,
+                channels: 1,
+                fileSize: 0,
+                inputDevice: inputDeviceName
+            ),
+            transcription: nil,
+            configuration: RecordingConfiguration(
+                voiceModel: transcriptionMode.modelDisplayName,
+                language: "auto",
+                provider: transcriptionMode.rawValue
+            ),
+            status: .recording
+        )
+        try? recordingStore.saveMetadataOnly(recording)
+    }
+
+    func saveInterruptedRecording(_ interruption: InterruptedRecording, recordingId: String) {
+        let fileSize: Int64
+        if let url = interruption.audioURL,
+           let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int64
+        {
+            fileSize = size
+        } else {
+            fileSize = 0
+        }
+        let recording = Recording(
+            id: recordingId,
+            createdAt: Date(),
+            recording: RecordingInfo(
+                duration: interruption.duration,
+                sampleRate: interruption.sampleRate,
+                channels: 1,
+                fileSize: fileSize,
+                inputDevice: interruption.inputDeviceName
+            ),
+            transcription: nil,
+            configuration: RecordingConfiguration(
+                voiceModel: transcriptionMode.modelDisplayName,
+                language: "auto",
+                provider: transcriptionMode.rawValue
+            ),
+            status: .failed
+        )
+        try? recordingStore.saveFailedRecording(recording)
+    }
+
     func cancelRecordingFlow() async {
         guard !captureTransitionInFlight else { return }
         captureTransitionInFlight = true
@@ -132,6 +193,7 @@ extension AppState {
         currentRecordingId = nil
 
         guard let audioURL = await recorder.stopRecording() else {
+            recordingStore.discardIfStillInProgress(id: recordingId)
             recorder.reset()
             return
         }
