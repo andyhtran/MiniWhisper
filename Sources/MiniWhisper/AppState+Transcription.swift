@@ -3,6 +3,11 @@ import os.log
 
 private let log = Logger(subsystem: Logger.subsystem, category: "Transcription")
 
+private enum TranscriptDelivery: Sendable {
+    case paste
+    case copyOnly
+}
+
 extension AppState {
     // MARK: - Transcription
 
@@ -91,6 +96,23 @@ extension AppState {
         TranscriptionFormatter.format(text, options: currentFormatterOptions())
     }
 
+    private func deliverTranscript(_ text: String, delivery: TranscriptDelivery) {
+        switch delivery {
+        case .paste:
+            pasteboard.copyAndPaste(text)
+        case .copyOnly:
+            if pasteboard.copy(text) {
+                toast.showInfo(
+                    title: "Transcript copied",
+                    message: "Press ⌘V to paste.")
+            } else {
+                toast.showError(
+                    title: "Copy Failed",
+                    message: "Could not copy the transcript to the clipboard.")
+            }
+        }
+    }
+
     /// Single choke point for VAD preprocessing: all three transcription entry
     /// points (fresh recording, re-transcribe cancelled, re-transcribe as new)
     /// funnel upload audio through here, and any failure inside the
@@ -153,7 +175,7 @@ extension AppState {
             let finalText = TranscriptionFormatter.applyFormatting(
                 to: cleanupResult.text, options: options)
 
-            pasteboard.copyAndPaste(finalText)
+            deliverTranscript(finalText, delivery: .paste)
 
             let fileSize =
                 (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64)
@@ -198,7 +220,6 @@ extension AppState {
             recorder.reset()
             toast.showError(title: "Transcription Failed", message: error.localizedDescription)
 
-            // Save failed recording metadata (audio file may or may not exist)
             let fileSize =
                 (try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int64)
                 ?? 0
@@ -224,12 +245,11 @@ extension AppState {
                 ),
                 status: .failed
             )
-            // Use saveMetadataOnly for failed recordings since audio may not exist
             try? recordingStore.saveFailedRecording(recording)
         }
     }
 
-    func retranscribeCancelledRecording(_ recording: Recording) async {
+    func retranscribeSavedRecording(_ recording: Recording) async {
         // Source audio may have been compressed to CAF by the retention
         // sweep — decode it to a temp WAV so VAD + the providers (which
         // expect WAV) keep working unchanged.
@@ -282,7 +302,7 @@ extension AppState {
                 rawText: result.text, applyCleanup: false)
             let finalText = applyPostProcessing(to: cleanupResult.text)
 
-            pasteboard.copyAndPaste(finalText)
+            deliverTranscript(finalText, delivery: .copyOnly)
 
             let fileSize =
                 (try? FileManager.default.attributesOfItem(atPath: recording.audioURL.path)[.size]

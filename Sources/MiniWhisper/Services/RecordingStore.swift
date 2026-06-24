@@ -49,10 +49,25 @@ final class RecordingStore: Sendable {
     }
 
     func saveFailedRecording(_ recording: Recording) throws {
+        try saveMetadataOnly(recording)
+    }
+
+    func saveMetadataOnly(_ recording: Recording) throws {
         try saveMetadata(recording)
         recordings.removeAll { $0.id == recording.id }
         recordings.insert(recording, at: 0)
         performRetention()
+    }
+
+    func discard(id: String) {
+        recordings.removeAll { $0.id == id }
+        let dir = Recording.baseDirectory.appendingPathComponent(id)
+        try? fileManager.removeItem(at: dir)
+    }
+
+    func discardIfStillInProgress(id: String) {
+        guard recordings.first(where: { $0.id == id })?.status == .recording else { return }
+        discard(id: id)
     }
 
     func delete(_ recording: Recording) throws {
@@ -73,7 +88,15 @@ final class RecordingStore: Sendable {
                 let data = try Data(contentsOf: metadataURL)
                 let decoder = JSONDecoder()
                 decoder.dateDecodingStrategy = .iso8601
-                let recording = try decoder.decode(Recording.self, from: data)
+                var recording = try decoder.decode(Recording.self, from: data)
+                if recording.status == .recording {
+                    guard recording.hasAudioFile else {
+                        try? fileManager.removeItem(at: recording.storageDirectory)
+                        continue
+                    }
+                    recording.status = .failed
+                    try? saveMetadata(recording)
+                }
                 loaded.append(recording)
             } catch {
                 // Skip directories without valid metadata (e.g. .DS_Store, partial writes)
@@ -96,17 +119,12 @@ final class RecordingStore: Sendable {
     }
 
     func historyItems(limit: Int) -> [Recording] {
-        let filtered = recordings.filter { recording in
-            recording.transcription != nil || recording.cleanup != nil
-                || recording.status == .cancelled
-        }
+        let filtered = recordings.filter(\.isVisibleInHistory)
         return Array(filtered.prefix(limit))
     }
 
     var totalHistoryItemCount: Int {
-        recordings.count {
-            $0.transcription != nil || $0.cleanup != nil || $0.status == .cancelled
-        }
+        recordings.count { $0.isVisibleInHistory }
     }
 
     // MARK: - Retention

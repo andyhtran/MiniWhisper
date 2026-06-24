@@ -14,8 +14,7 @@ func makeUpdaterController() -> UpdaterProviding {
         return DisabledUpdaterController(unavailableReason: "Updates unavailable in this build.")
     }
 
-    let defaults = UserDefaults.standard
-    let savedAutoUpdate = (defaults.object(forKey: UpdaterDefaults.autoUpdateEnabledKey) as? Bool) ?? true
+    let savedAutoUpdate = UpdaterDefaults.savedAutoUpdateEnabled()
     return SparkleUpdaterController(savedAutoUpdate: savedAutoUpdate)
 }
 

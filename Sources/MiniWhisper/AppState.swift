@@ -81,14 +81,21 @@ final class AppState: Sendable {
     init() {
         modelLoadState = initialModelLoadState(for: transcriptionMode)
 
-        recorder.onRecordingInterrupted = { [weak self] message in
+        recorder.onRecordingInterrupted = { [weak self] interruption in
             guard let self else { return }
+            let recordingId = currentRecordingId
             stopDurationChecks()
             onRecordingEnded?()
             currentRecordingId = nil
             captureTransitionInFlight = false
             cleanupRequestedForCurrentRecording = false
-            toast.showError(title: "Recording Failed", message: message)
+            if editModeContext == nil, let recordingId {
+                saveInterruptedRecording(interruption, recordingId: recordingId)
+            } else if let context = editModeContext {
+                editModeContext = nil
+                pasteboard.restoreSavedPasteboard(context.savedPasteboard)
+            }
+            toast.showError(title: "Recording Failed", message: interruption.message)
             recorder.reset()
         }
 
@@ -272,7 +279,7 @@ final class AppState: Sendable {
         recorder.state = .processing
 
         Task {
-            await retranscribeCancelledRecording(recording)
+            await retranscribeSavedRecording(recording)
         }
     }
 

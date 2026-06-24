@@ -19,6 +19,14 @@ enum RecordingState: Equatable, Sendable {
     }
 }
 
+struct InterruptedRecording: Sendable {
+    let message: String
+    let audioURL: URL?
+    let duration: TimeInterval
+    let sampleRate: Double
+    let inputDeviceName: String
+}
+
 /// Thread-safe bridge for passing RMS meter values from CoreAudio's real-time
 /// callback thread to the MainActor-isolated AudioRecorder. Uses atomic-style
 /// access through os_unfair_lock so the audio thread never blocks.
@@ -44,7 +52,7 @@ final class AudioRecorder: Sendable {
     /// Normalized microphone level (0...1) for menu bar meter display.
     /// Updated ~10-12 Hz while recording; resets to 0 when not recording.
     var meterLevel: Double = 0
-    var onRecordingInterrupted: ((String) -> Void)?
+    var onRecordingInterrupted: ((InterruptedRecording) -> Void)?
 
     private let hardwareQueue = DispatchQueue(label: "com.miniwhisper.audio.hardware", qos: .userInitiated)
     private var capture: CoreAudioInputCapture?
@@ -189,6 +197,9 @@ final class AudioRecorder: Sendable {
         transitionInFlight = false
 
         let failedURL = recordingURL
+        let duration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? currentDuration
+        let sampleRate = actualSampleRate
+        let inputDeviceName = actualInputDeviceName
         capture = nil
         durationTimer?.invalidate()
         durationTimer = nil
@@ -199,13 +210,15 @@ final class AudioRecorder: Sendable {
         smoothedDB = -60
         state = .error(message)
 
-        if let url = failedURL {
-            try? FileManager.default.removeItem(at: url)
-            let dir = url.deletingLastPathComponent()
-            try? FileManager.default.removeItem(at: dir)
-        }
-
-        onRecordingInterrupted?(message)
+        onRecordingInterrupted?(
+            InterruptedRecording(
+                message: message,
+                audioURL: failedURL,
+                duration: duration,
+                sampleRate: sampleRate,
+                inputDeviceName: inputDeviceName
+            )
+        )
     }
 
     private func stopCaptureAndTimer() async {

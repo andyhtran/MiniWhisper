@@ -13,25 +13,22 @@ final class SparkleUpdaterController: NSObject, UpdaterProviding, SPUUpdaterDele
 
     init(savedAutoUpdate: Bool) {
         super.init()
+        UpdaterDefaults.disableAutomaticDownloads()
         let updater = self.controller.updater
         updater.automaticallyChecksForUpdates = savedAutoUpdate
-        updater.automaticallyDownloadsUpdates = savedAutoUpdate
+        updater.automaticallyDownloadsUpdates = false
         self.controller.startUpdater()
     }
 
     var automaticallyChecksForUpdates: Bool {
         get { self.controller.updater.automaticallyChecksForUpdates }
         set {
-            UserDefaults.standard.set(newValue, forKey: UpdaterDefaults.autoUpdateEnabledKey)
+            UpdaterDefaults.setAutoUpdateEnabled(newValue)
+            UpdaterDefaults.disableAutomaticDownloads()
             let updater = self.controller.updater
             updater.automaticallyChecksForUpdates = newValue
-            updater.automaticallyDownloadsUpdates = newValue
+            updater.automaticallyDownloadsUpdates = false
         }
-    }
-
-    var automaticallyDownloadsUpdates: Bool {
-        get { self.controller.updater.automaticallyDownloadsUpdates }
-        set { self.controller.updater.automaticallyDownloadsUpdates = newValue }
     }
 
     var isAvailable: Bool { true }

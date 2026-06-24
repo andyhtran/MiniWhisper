@@ -1,6 +1,7 @@
 import Foundation
 
 enum RecordingStatus: String, Codable, Equatable, Hashable, Sendable {
+    case recording
     case completed
     case failed
     case cancelled
@@ -222,15 +223,21 @@ struct Recording: Codable, Identifiable, Equatable, Hashable, Sendable {
         FileManager.default.fileExists(atPath: vadAudioURL.path)
     }
 
+    var isVisibleInHistory: Bool {
+        transcription != nil || cleanup != nil || status == .cancelled || status == .failed
+    }
+
     var canRetranscribe: Bool {
-        status == .cancelled && transcription == nil && hasAudioFile
+        (status == .cancelled || status == .failed)
+            && transcription == nil
+            && hasAudioFile
+            && editMode == nil
     }
 
     /// Completed recordings can be re-transcribed with a different model,
-    /// producing a new history entry. Only available while the WAV still exists
-    /// (before the 15-minute retention cleanup). Edit-mode entries are
-    /// excluded — their audio is a spoken instruction, not content the
-    /// user would want to re-transcribe in its own right.
+    /// producing a new history entry. Only available while retained audio
+    /// still exists. Edit-mode entries are excluded — their audio is a
+    /// spoken instruction, not content the user would want to re-transcribe.
     var canRetranscribeAsNew: Bool {
         status == .completed && transcription != nil && hasAudioFile && editMode == nil
     }
