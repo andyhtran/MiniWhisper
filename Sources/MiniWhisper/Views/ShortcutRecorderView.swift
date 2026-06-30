@@ -82,9 +82,17 @@ struct ShortcutRecorderView: View {
 
                 let ctx = Unmanaged<RecorderContext>.fromOpaque(refcon).takeUnretainedValue()
 
-                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if type == .tapDisabledByUserInput {
+                    ctx.reenableImmediately()
                     return Unmanaged.passUnretained(event)
                 }
+
+                if type == .tapDisabledByTimeout {
+                    ctx.reenableAfterTimeout()
+                    return Unmanaged.passUnretained(event)
+                }
+
+                ctx.resetTimeoutBackoff()
 
                 let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
                 let flags = event.flags
@@ -143,8 +151,10 @@ struct ShortcutRecorderView: View {
         guard let eventTap else {
             log.error("Failed to create recorder event tap")
             isRecording = false
+            RecorderContext.current = nil
             return
         }
+        context.eventTap = eventTap
         log.info("Recorder event tap created")
 
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
@@ -197,10 +207,12 @@ struct ShortcutRecorderView: View {
 
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
+            CFMachPortInvalidate(eventTap)
         }
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         }
+        RecorderContext.current?.eventTap = nil
         eventTap = nil
         runLoopSource = nil
         RecorderContext.current = nil
@@ -209,17 +221,55 @@ struct ShortcutRecorderView: View {
 
 /// Mutable state for the CGEventTap C callback. Stored in `current` to prevent
 /// deallocation since the tap's refcon uses passUnretained.
-final class RecorderContext {
+final class RecorderContext: @unchecked Sendable {
     nonisolated(unsafe) static var current: RecorderContext?
 
     let onKeyDown: (UInt16, NSEvent.ModifierFlags, Bool) -> Void
     let onFnOnly: () -> Void
     let onEscape: () -> Void
 
+    var eventTap: CFMachPort?
     var fnKeyDown: Bool = false
     var otherKeyPressedDuringFn: Bool = false
     var fnPressTime: CFAbsoluteTime?
     let maxTapDuration: TimeInterval = 0.5
+    private let timeoutReenableDelays: [TimeInterval] = [0.25, 0.5, 1.0]
+    private var timeoutReenableAttempts = 0
+    private var timeoutReenableScheduled = false
+
+    func reenableImmediately() {
+        timeoutReenableAttempts = 0
+        timeoutReenableScheduled = false
+        guard let eventTap else { return }
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+    }
+
+    func reenableAfterTimeout() {
+        guard !timeoutReenableScheduled else { return }
+        guard timeoutReenableAttempts < timeoutReenableDelays.count else {
+            log.error("Recorder event tap repeatedly disabled by timeout; aborting shortcut capture")
+            DispatchQueue.main.async { [weak self] in
+                self?.onEscape()
+            }
+            return
+        }
+
+        let delay = timeoutReenableDelays[timeoutReenableAttempts]
+        timeoutReenableAttempts += 1
+        timeoutReenableScheduled = true
+        log.warning("Recorder event tap disabled by timeout; scheduling re-enable")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.timeoutReenableScheduled = false
+            guard let eventTap = self.eventTap else { return }
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+        }
+    }
+
+    func resetTimeoutBackoff() {
+        timeoutReenableAttempts = 0
+        timeoutReenableScheduled = false
+    }
 
     init(
         onKeyDown: @escaping (UInt16, NSEvent.ModifierFlags, Bool) -> Void,

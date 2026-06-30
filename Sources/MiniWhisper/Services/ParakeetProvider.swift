@@ -54,8 +54,7 @@ final class ParakeetProvider {
 
         let startTime = Date()
 
-        nonisolated(unsafe) let unsafeManager = manager
-        let result = try await unsafeManager.transcribe(audioURL, source: .microphone)
+        let result = try await manager.transcribe(audioURL, source: .microphone)
         let processingTime = Date().timeIntervalSince(startTime)
 
         let segments = convertToSegments(result)

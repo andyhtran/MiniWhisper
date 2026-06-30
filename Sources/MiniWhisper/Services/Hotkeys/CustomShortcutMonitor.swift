@@ -26,12 +26,17 @@ final class CustomShortcutMonitor: @unchecked Sendable {
         self.fnStateMachine = FnStateMachine()
         self.eventTapManager = EventTapManager()
 
-        eventTapManager.setEventCallback { [unowned self] type, event in
-            self.processEvent(type: type, event: event)
+        installEventTapCallback()
+    }
+
+    private func installEventTapCallback() {
+        eventTapManager.setEventCallback { [weak self] type, event in
+            self?.processEvent(type: type, event: event) ?? false
         }
     }
 
     @MainActor func start() {
+        installEventTapCallback()
         let shortcuts = shortcutMatcher.getAllShortcuts()
         for (name, shortcut) in shortcuts {
             log.info("Loaded shortcut: \(name.rawValue) = keyCode=\(shortcut.keyCode) opt=\(shortcut.option) cmd=\(shortcut.command) display=\(shortcut.compactDisplayString)")
@@ -40,6 +45,7 @@ final class CustomShortcutMonitor: @unchecked Sendable {
         log.info("Toggle recording handler registered: \(hasToggleHandler)")
         eventTapManager.start()
     }
+
     @MainActor func stop() {
         eventTapManager.stop()
         fnStateMachine.reset()

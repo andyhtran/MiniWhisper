@@ -12,6 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyManager: HotkeyManager?
     private var hotkeyDelegate: HotkeyDelegateImpl?
     private var appNapActivity: NSObjectProtocol?
+    private var terminationCleanupInFlight = false
+    private var terminationReplyHandlers: [() -> Void] = []
     private var processingAnimationTimer: Timer?
     private var processingAnimationPhase: Double = 0
     let updaterController: UpdaterProviding = makeUpdaterController()
@@ -246,7 +248,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if terminationCleanupInFlight {
+            enqueueTerminationReply(to: sender)
+            return .terminateLater
+        }
+        guard appState?.needsTerminationCleanup == true else { return .terminateNow }
+
+        terminationCleanupInFlight = true
+        enqueueTerminationReply(to: sender)
+        hotkeyManager?.stop()
+        processingAnimationTimer?.invalidate()
+        processingAnimationTimer = nil
+
+        Task { @MainActor [self] in
+            if let appState {
+                await appState.prepareForTermination()
+            }
+            finishTerminationCleanup()
+        }
+        return .terminateLater
+    }
+
+    private func enqueueTerminationReply(to sender: NSApplication) {
+        terminationReplyHandlers.append {
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+    }
+
+    private func finishTerminationCleanup() {
+        let handlers = terminationReplyHandlers
+        terminationReplyHandlers.removeAll()
+        terminationCleanupInFlight = false
+        handlers.forEach { $0() }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        hotkeyManager?.stop()
+        processingAnimationTimer?.invalidate()
+        processingAnimationTimer = nil
+        appState?.permissions.stopPolling()
+        appState?.pasteboard.restorePendingPasteboard()
+
         if let activity = appNapActivity {
             ProcessInfo.processInfo.endActivity(activity)
             appNapActivity = nil
