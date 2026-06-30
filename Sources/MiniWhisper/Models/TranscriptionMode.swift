@@ -48,17 +48,68 @@ struct CustomProviderSettings: Codable, Equatable, Sendable {
 
     private static let storageKey = "CustomProviderSettings"
 
+    private enum CodingKeys: String, CodingKey {
+        case endpointURL
+        case apiKey
+        case modelName
+    }
+
+    init(endpointURL: String, apiKey: String, modelName: String) {
+        self.endpointURL = endpointURL
+        self.apiKey = apiKey
+        self.modelName = modelName
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        endpointURL = try container.decodeIfPresent(String.self, forKey: .endpointURL) ?? ""
+        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(endpointURL, forKey: .endpointURL)
+        try container.encode(modelName, forKey: .modelName)
+    }
+
     static func load() -> CustomProviderSettings {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let settings = try? JSONDecoder().decode(CustomProviderSettings.self, from: data) else {
-            return .empty
+              var settings = try? JSONDecoder().decode(CustomProviderSettings.self, from: data) else {
+            return .empty.withKeychainAPIKey()
+        }
+
+        let migratedKey = settings.apiKey
+        let keychainKey = CustomProviderAPIKeyStore.transcriptionKey()
+        if keychainKey.isEmpty {
+            settings.apiKey = migratedKey
+            if !migratedKey.isEmpty,
+               CustomProviderAPIKeyStore.saveTranscriptionKey(migratedKey) {
+                settings.saveMetadataOnly()
+            }
+        } else {
+            settings.apiKey = keychainKey
+            if !migratedKey.isEmpty {
+                settings.saveMetadataOnly()
+            }
         }
         return settings
     }
 
     func save() {
+        guard CustomProviderAPIKeyStore.saveTranscriptionKey(apiKey) else { return }
+        saveMetadataOnly()
+    }
+
+    private func saveMetadataOnly() {
         if let data = try? JSONEncoder().encode(self) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
         }
+    }
+
+    private func withKeychainAPIKey() -> CustomProviderSettings {
+        var settings = self
+        settings.apiKey = CustomProviderAPIKeyStore.transcriptionKey()
+        return settings
     }
 }

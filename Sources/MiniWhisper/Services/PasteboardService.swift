@@ -5,6 +5,9 @@ import os.log
 
 final class PasteboardService: @unchecked Sendable {
     private let logger = Logger(subsystem: Logger.subsystem, category: "PasteboardService")
+    private let pendingRestoreLock = NSLock()
+    private var pendingRestore: SavedPasteboardContents?
+
     // MARK: - Types
 
     struct SavedPasteboardContents: Sendable {
@@ -24,8 +27,10 @@ final class PasteboardService: @unchecked Sendable {
         logger.info("copyAndPaste called with \(text.count) characters")
 
         let savedContents = saveCurrentPasteboardContents()
+        setPendingRestore(savedContents)
 
         guard copy(text) else {
+            clearPendingRestore()
             logger.error("Failed to copy text to clipboard")
             return
         }
@@ -39,6 +44,7 @@ final class PasteboardService: @unchecked Sendable {
             // 300ms: wait for the target app to read the pasted content before restoring
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self?.restorePasteboardContents(savedContents)
+                self?.clearPendingRestore()
                 self?.logger.info("Clipboard restored")
             }
         }
@@ -73,15 +79,18 @@ final class PasteboardService: @unchecked Sendable {
 
         guard pasteboard.changeCount > initialChangeCount else {
             restorePasteboardContents(saved)
+            clearPendingRestore()
             return nil
         }
 
         let captured = pasteboard.string(forType: .string) ?? ""
         guard !captured.isEmpty else {
             restorePasteboardContents(saved)
+            clearPendingRestore()
             return nil
         }
 
+        setPendingRestore(saved)
         return (captured, saved)
     }
 
@@ -89,6 +98,8 @@ final class PasteboardService: @unchecked Sendable {
     /// synthesizes ⌘V, then restores the previously-saved pasteboard
     /// contents after a short delay so the target app finishes reading.
     func pasteAndRestore(_ text: String, savedPasteboard: SavedPasteboardContents?) {
+        setPendingRestore(savedPasteboard)
+
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -97,6 +108,7 @@ final class PasteboardService: @unchecked Sendable {
             self?.simulatePaste()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self?.restorePasteboardContents(savedPasteboard)
+                self?.clearPendingRestore()
             }
         }
     }
@@ -105,6 +117,12 @@ final class PasteboardService: @unchecked Sendable {
     /// where we never paste anything and want the user's clipboard back.
     func restoreSavedPasteboard(_ savedPasteboard: SavedPasteboardContents?) {
         restorePasteboardContents(savedPasteboard)
+        clearPendingRestore()
+    }
+
+    func restorePendingPasteboard() {
+        let saved = takePendingRestore()
+        restorePasteboardContents(saved)
     }
 
     private func simulateCopy() {
@@ -131,6 +149,26 @@ final class PasteboardService: @unchecked Sendable {
     }
 
     // MARK: - Clipboard Save/Restore
+
+    private func setPendingRestore(_ saved: SavedPasteboardContents?) {
+        pendingRestoreLock.lock()
+        pendingRestore = saved
+        pendingRestoreLock.unlock()
+    }
+
+    private func clearPendingRestore() {
+        pendingRestoreLock.lock()
+        pendingRestore = nil
+        pendingRestoreLock.unlock()
+    }
+
+    private func takePendingRestore() -> SavedPasteboardContents? {
+        pendingRestoreLock.lock()
+        let saved = pendingRestore
+        pendingRestore = nil
+        pendingRestoreLock.unlock()
+        return saved
+    }
 
     private func saveCurrentPasteboardContents() -> SavedPasteboardContents? {
         let pasteboard = NSPasteboard.general
