@@ -13,9 +13,23 @@ protocol UpdaterProviding: AnyObject, Sendable {
 @Observable
 final class UpdateStatus {
     static let disabled = UpdateStatus()
+    /// An update has been downloaded and is ready to install.
     var isUpdateReady: Bool
+    /// A scheduled check found an update but the alert was intentionally not
+    /// shown (gentle reminders); the badge/banner point the user at it.
+    var updateAvailable: Bool = false
+    var availableVersion: String?
+
+    /// Drives the status-item badge and the menu banner.
+    var needsUserAttention: Bool { updateAvailable || isUpdateReady }
 
     init(isUpdateReady: Bool = false) {
         self.isUpdateReady = isUpdateReady
     }
+}
+
+/// Shared between the Sparkle controller (posts) and AppDelegate (handles the
+/// tap), which compile under different flags.
+enum UpdateNotification {
+    static let identifier = "sparkle-update-available"
 }
