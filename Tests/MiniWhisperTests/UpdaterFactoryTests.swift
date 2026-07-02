@@ -21,6 +21,20 @@ struct UpdaterFactoryTests {
     @Test func updateStatusDefaultsToNotReady() {
         let status = UpdateStatus()
         #expect(!status.isUpdateReady)
+        #expect(!status.updateAvailable)
+        #expect(status.availableVersion == nil)
+        #expect(!status.needsUserAttention)
+    }
+
+    @Test func updateStatusNeedsAttentionWhenUpdateAvailable() {
+        let status = UpdateStatus()
+        status.updateAvailable = true
+        #expect(status.needsUserAttention)
+    }
+
+    @Test func updateStatusNeedsAttentionWhenUpdateReady() {
+        let status = UpdateStatus(isUpdateReady: true)
+        #expect(status.needsUserAttention)
     }
 
     @Test func disabledStaticInstanceIsNotReady() {

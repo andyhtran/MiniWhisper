@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 import os.log
 
 private let log = Logger(subsystem: Logger.subsystem, category: "AppDelegate")
@@ -16,10 +17,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationReplyHandlers: [() -> Void] = []
     private var processingAnimationTimer: Timer?
     private var processingAnimationPhase: Double = 0
+    private var updateBadgeView: NSView?
     let updaterController: UpdaterProviding = makeUpdaterController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        UNUserNotificationCenter.current().delegate = self
 
         // Disable App Nap for reliable background operation
         appNapActivity = ProcessInfo.processInfo.beginActivity(
@@ -33,6 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupPopover()
         observeIconState()
+        observeUpdateBadge()
         scheduleLaunchRevealIfNeeded(notification)
 
         Task {
@@ -198,6 +202,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Update Badge
+
+    private func observeUpdateBadge() {
+        withObservationTracking {
+            _ = self.updaterController.updateStatus.needsUserAttention
+        } onChange: {
+            Task { @MainActor [weak self] in
+                self?.syncUpdateBadge()
+                self?.observeUpdateBadge()
+            }
+        }
+    }
+
+    /// The badge is a subview rather than part of the rendered icon so the
+    /// idle icon can stay a template image (adapting to menu bar appearance).
+    private func syncUpdateBadge() {
+        let show = updaterController.updateStatus.needsUserAttention
+        if show, updateBadgeView == nil, let button = statusItem.button {
+            let size: CGFloat = 7
+            let bounds = button.bounds
+            let dot = UpdateBadgeDotView(
+                frame: NSRect(
+                    x: bounds.maxX - size - 1, y: bounds.maxY - size - 1,
+                    width: size, height: size))
+            dot.autoresizingMask = [.minXMargin, .minYMargin]
+            button.addSubview(dot)
+            updateBadgeView = dot
+        } else if !show, let dot = updateBadgeView {
+            dot.removeFromSuperview()
+            updateBadgeView = nil
+        }
+    }
+
     private func setupServices() async {
         ClaudeSkillManager.shared.syncBundleToDocumentsIfClean()
 
@@ -215,6 +252,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !permissions.microphoneGranted {
             await permissions.requestMicrophone()
         }
+
+        // Used by update-available reminders and the recording-limit warning.
+        // Without this, all posted notifications were silently dropped.
+        _ = try? await UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .sound])
 
         appState.preloadModel()
 
@@ -295,6 +337,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appNapActivity = nil
         }
     }
+}
+
+// MARK: - User Notifications
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let identifier = response.notification.request.identifier
+        guard identifier == UpdateNotification.identifier else { return }
+        // Re-enters the in-progress update session, bringing the Sparkle
+        // alert into focus.
+        await MainActor.run {
+            self.updaterController.checkForUpdates(nil)
+        }
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        // Without this, notifications are suppressed whenever the app is
+        // active (e.g. the popover is open).
+        [.banner]
+    }
+}
+
+// MARK: - Update Badge Dot
+
+private final class UpdateBadgeDotView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemBlue.setFill()
+        NSBezierPath(ovalIn: bounds).fill()
+    }
+
+    // Let clicks fall through to the status item button.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - Vibrancy Hosting
