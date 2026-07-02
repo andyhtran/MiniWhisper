@@ -238,26 +238,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupServices() async {
         ClaudeSkillManager.shared.syncBundleToDocumentsIfClean()
 
-        try? await appState.recordingStore.loadAll()
-        appState.recordingStore.performRetention()
-
-        let analyticsExisted = appState.analyticsStore.load()
-        if !analyticsExisted {
-            appState.analyticsStore.seedFromRecordings(appState.recordingStore.recordings)
-        }
-
         let permissions = appState.permissions
         permissions.refresh()
 
-        if !permissions.microphoneGranted {
-            await permissions.requestMicrophone()
-        }
-
-        // Used by update-available reminders and the recording-limit warning.
-        // Without this, all posted notifications were silently dropped.
-        _ = try? await UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert, .sound])
-
+        // Model preload and hotkey registration must run before any await
+        // that can block on a permission prompt (mic, notifications below).
+        // Those prompts suspend until the user answers — and for an
+        // LSUIElement app relaunched by Sparkle after an update, the
+        // notification prompt may never even render, hanging the await
+        // forever. With the prompts ordered first, the app sat at
+        // "Loading Model..." with no event tap installed, so shortcuts
+        // fell through to the frontmost app.
         appState.preloadModel()
 
         let delegate = HotkeyDelegateImpl(appState: appState)
@@ -288,6 +279,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             permissions.openAccessibilitySettings()
             permissions.startPolling()
         }
+
+        try? await appState.recordingStore.loadAll()
+        appState.recordingStore.performRetention()
+
+        let analyticsExisted = appState.analyticsStore.load()
+        if !analyticsExisted {
+            appState.analyticsStore.seedFromRecordings(appState.recordingStore.recordings)
+        }
+
+        if !permissions.microphoneGranted {
+            await permissions.requestMicrophone()
+        }
+
+        // Used by update-available reminders and the recording-limit warning.
+        // Without this, all posted notifications were silently dropped.
+        // Kept sequential (not detached) so the notification prompt can't
+        // stack on top of the mic prompt during a first run — but it must
+        // stay last, since it blocks until the one-time prompt is answered.
+        _ = try? await UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .sound])
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
