@@ -17,7 +17,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationReplyHandlers: [() -> Void] = []
     private var processingAnimationTimer: Timer?
     private var processingAnimationPhase: Double = 0
-    private var updateBadgeView: NSView?
     let updaterController: UpdaterProviding = makeUpdaterController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -36,7 +35,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupPopover()
         observeIconState()
-        observeUpdateBadge()
         scheduleLaunchRevealIfNeeded(notification)
 
         Task {
@@ -202,39 +200,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Update Badge
-
-    private func observeUpdateBadge() {
-        withObservationTracking {
-            _ = self.updaterController.updateStatus.needsUserAttention
-        } onChange: {
-            Task { @MainActor [weak self] in
-                self?.syncUpdateBadge()
-                self?.observeUpdateBadge()
-            }
-        }
-    }
-
-    /// The badge is a subview rather than part of the rendered icon so the
-    /// idle icon can stay a template image (adapting to menu bar appearance).
-    private func syncUpdateBadge() {
-        let show = updaterController.updateStatus.needsUserAttention
-        if show, updateBadgeView == nil, let button = statusItem.button {
-            let size: CGFloat = 7
-            let bounds = button.bounds
-            let dot = UpdateBadgeDotView(
-                frame: NSRect(
-                    x: bounds.maxX - size - 1, y: bounds.maxY - size - 1,
-                    width: size, height: size))
-            dot.autoresizingMask = [.minXMargin, .minYMargin]
-            button.addSubview(dot)
-            updateBadgeView = dot
-        } else if !show, let dot = updateBadgeView {
-            dot.removeFromSuperview()
-            updateBadgeView = nil
-        }
-    }
-
     private func setupServices() async {
         ClaudeSkillManager.shared.syncBundleToDocumentsIfClean()
 
@@ -374,18 +339,6 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         // active (e.g. the popover is open).
         [.banner]
     }
-}
-
-// MARK: - Update Badge Dot
-
-private final class UpdateBadgeDotView: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.systemBlue.setFill()
-        NSBezierPath(ovalIn: bounds).fill()
-    }
-
-    // Let clicks fall through to the status item button.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - Vibrancy Hosting

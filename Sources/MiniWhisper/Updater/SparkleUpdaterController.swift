@@ -1,4 +1,5 @@
 #if canImport(Sparkle) && ENABLE_SPARKLE
+import AppKit
 import Foundation
 import Sparkle
 import UserNotifications
@@ -37,7 +38,35 @@ final class SparkleUpdaterController: NSObject, UpdaterProviding, SPUUpdaterDele
     var isAvailable: Bool { true }
 
     func checkForUpdates(_ sender: Any?) {
+        // Clicks reach us through the status-item popover, a nonactivating
+        // panel, so the app is not active and Sparkle's own [NSApp activate]
+        // (cooperative on macOS 14+) can be silently denied for a background
+        // app. When that happens the update alert shows without key focus,
+        // behind other apps' windows, or stays on whatever Space an earlier
+        // attempt left it on — to the user, clicking does nothing. Activate
+        // while still handling the user's click, then force the update UI
+        // to the front ourselves; orderFrontRegardless works even when
+        // activation is denied.
+        NSApp.activate()
         self.controller.checkForUpdates(sender)
+        self.bringUpdateUIToFront()
+    }
+
+    // When an update session is already in progress (the gentle-reminder
+    // case), checkForUpdates re-shows the existing alert synchronously, so
+    // its window is on screen by the time this runs. A fresh check presents
+    // its UI later — nothing matches here and Sparkle's own focus handling
+    // applies.
+    private func bringUpdateUIToFront() {
+        let sparkleBundle = Bundle(for: SPUStandardUpdaterController.self)
+        for window in NSApp.windows where window.isVisible {
+            guard let windowController = window.windowController,
+                Bundle(for: type(of: windowController)) == sparkleBundle
+            else { continue }
+            window.collectionBehavior.insert(.moveToActiveSpace)
+            window.orderFrontRegardless()
+            window.makeKey()
+        }
     }
 
     // MARK: - SPUStandardUserDriverDelegate (gentle reminders)
@@ -45,9 +74,9 @@ final class SparkleUpdaterController: NSObject, UpdaterProviding, SPUUpdaterDele
     // This app is LSUIElement, so it never becomes active; without gentle
     // reminders Sparkle shows scheduled-update alerts behind other apps'
     // windows and users never see them. We suppress the buried alert and
-    // surface the update through the status-item badge, the menu banner,
-    // and a user notification instead. Tapping any of them re-enters the
-    // update session via checkForUpdates, which focuses the alert.
+    // surface the update through the menu banner and a user notification
+    // instead. Tapping either re-enters the update session via
+    // checkForUpdates, which focuses the alert.
 
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
@@ -93,7 +122,7 @@ final class SparkleUpdaterController: NSObject, UpdaterProviding, SPUUpdaterDele
         let request = UNNotificationRequest(
             identifier: UpdateNotification.identifier, content: content, trigger: nil)
         // If notification permission was denied, this is silently dropped —
-        // the badge and menu banner still cover discovery.
+        // the menu banner still covers discovery.
         UNUserNotificationCenter.current().add(request)
     }
 

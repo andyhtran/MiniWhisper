@@ -16,11 +16,11 @@ final class UpdateStatus {
     /// An update has been downloaded and is ready to install.
     var isUpdateReady: Bool
     /// A scheduled check found an update but the alert was intentionally not
-    /// shown (gentle reminders); the badge/banner point the user at it.
+    /// shown (gentle reminders); the menu banner points the user at it.
     var updateAvailable: Bool = false
     var availableVersion: String?
 
-    /// Drives the status-item badge and the menu banner.
+    /// Drives the menu banner.
     var needsUserAttention: Bool { updateAvailable || isUpdateReady }
 
     init(isUpdateReady: Bool = false) {
