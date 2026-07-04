@@ -8,7 +8,7 @@ final class DisabledUpdaterController: UpdaterProviding {
     }
     let isAvailable: Bool = false
     let unavailableReason: String?
-    let updateStatus = UpdateStatus()
+    let updateViewModel = UpdateViewModel()
 
     init(unavailableReason: String? = nil) {
         self.unavailableReason = unavailableReason

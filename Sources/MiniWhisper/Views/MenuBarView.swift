@@ -19,15 +19,10 @@ struct MenuBarView: View {
                     .padding(.top, 14)
             }
 
-            if let updaterController, updaterController.updateStatus.needsUserAttention {
-                UpdateAvailableBanner(
-                    version: updaterController.updateStatus.availableVersion,
-                    isReady: updaterController.updateStatus.isUpdateReady
-                ) {
-                    updaterController.checkForUpdates(nil)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
+            if let updaterController, !updaterController.updateViewModel.state.isIdle {
+                UpdateBanner(model: updaterController.updateViewModel)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
             }
 
             if appState.showMenuBarVisibilityHint {
@@ -624,53 +619,6 @@ private struct PermissionRow: View {
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isHovering ? Color.orange.opacity(0.08) : Color.orange.opacity(0.04))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovering = hovering
-            }
-        }
-    }
-}
-
-// MARK: - Update Banner
-
-private struct UpdateAvailableBanner: View {
-    let version: String?
-    let isReady: Bool
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.blue)
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(isReady ? "Update Ready" : "Update Available")
-                        .font(.system(size: 13, weight: .medium))
-                    Text(version.map { "MiniWhisper \($0)" } ?? "A new version is available")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                Text(isReady ? "Install" : "View")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.blue)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isHovering ? Color.blue.opacity(0.08) : Color.blue.opacity(0.04))
             )
             .contentShape(Rectangle())
         }

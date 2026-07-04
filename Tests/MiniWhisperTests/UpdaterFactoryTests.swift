@@ -10,35 +10,13 @@ struct UpdaterFactoryTests {
         let updater = DisabledUpdaterController(unavailableReason: "test reason")
         #expect(!updater.isAvailable)
         #expect(updater.unavailableReason == "test reason")
-        #expect(!updater.updateStatus.isUpdateReady)
+        #expect(updater.updateViewModel.state.isIdle)
     }
 
     @Test func disabledUpdaterCheckIsNoop() {
         let updater = DisabledUpdaterController()
         updater.checkForUpdates(nil)
-    }
-
-    @Test func updateStatusDefaultsToNotReady() {
-        let status = UpdateStatus()
-        #expect(!status.isUpdateReady)
-        #expect(!status.updateAvailable)
-        #expect(status.availableVersion == nil)
-        #expect(!status.needsUserAttention)
-    }
-
-    @Test func updateStatusNeedsAttentionWhenUpdateAvailable() {
-        let status = UpdateStatus()
-        status.updateAvailable = true
-        #expect(status.needsUserAttention)
-    }
-
-    @Test func updateStatusNeedsAttentionWhenUpdateReady() {
-        let status = UpdateStatus(isUpdateReady: true)
-        #expect(status.needsUserAttention)
-    }
-
-    @Test func disabledStaticInstanceIsNotReady() {
-        #expect(!UpdateStatus.disabled.isUpdateReady)
+        #expect(updater.updateViewModel.state.isIdle)
     }
 
     @Test func updaterEnvironmentStoresInjectedController() throws {

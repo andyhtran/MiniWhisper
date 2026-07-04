@@ -211,10 +211,7 @@ private struct GeneralSettingsPage: View {
                 )
 
                 LabeledContent("Check for updates") {
-                    Button("Check Now") {
-                        updaterController?.checkForUpdates(nil)
-                    }
-                    .disabled(updaterController?.isAvailable != true)
+                    updateCheckContent
                 }
             }
 
@@ -295,6 +292,73 @@ private struct GeneralSettingsPage: View {
             vadEnabled = VADSettings.enabled
             editModeBehavior = EditModeSettings.behavior
         }
+    }
+
+    /// Mirrors the live update state next to the Check Now button, since the
+    /// menu popover (where the full banner lives) is closed while the user
+    /// is in this window.
+    @ViewBuilder private var updateCheckContent: some View {
+        switch updaterController?.updateViewModel.state ?? .idle {
+        case .idle:
+            checkNowButton
+
+        case .checking:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Checking…")
+                    .foregroundStyle(.secondary)
+            }
+
+        case .updateAvailable(let update):
+            Button("Install \(update.version)") {
+                update.install()
+            }
+
+        case .downloading(let download):
+            Text(
+                download.fraction.map { "Downloading… \(Int($0 * 100))%" }
+                    ?? "Downloading…"
+            )
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+
+        case .extracting:
+            Text("Preparing…")
+                .foregroundStyle(.secondary)
+
+        case .installing:
+            Text("Installing… MiniWhisper will relaunch")
+                .foregroundStyle(.secondary)
+
+        case .notFound:
+            Text("You're up to date")
+                .foregroundStyle(.secondary)
+
+        case .failed:
+            HStack(spacing: 8) {
+                Text("Update failed")
+                    .foregroundStyle(.secondary)
+                checkNowButton
+            }
+        }
+    }
+
+    private var checkNowButton: some View {
+        Button("Check Now") {
+            guard updaterController?.updateViewModel.state.allowsManualCheck == true else {
+                return
+            }
+            updaterController?.checkForUpdates(nil)
+        }
+        .disabled(updateCheckDisabled)
+    }
+
+    private var updateCheckDisabled: Bool {
+        guard let updaterController, updaterController.isAvailable else {
+            return true
+        }
+        return !updaterController.updateViewModel.state.allowsManualCheck
     }
 }
 
