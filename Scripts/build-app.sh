@@ -24,6 +24,16 @@ else
     AUTO_CHECKS=true
 fi
 
+if [[ -n "${SPARKLE_FEED_URL_OVERRIDE:-}" ]]; then
+    if [[ "$BUILD_CONFIG" != "debug" ]]; then
+        echo "SPARKLE_FEED_URL_OVERRIDE is only allowed for debug builds." >&2
+        exit 1
+    fi
+    # Local update-flow testing points the feed at a localhost appcast
+    # (see Scripts/test-update-flow.sh).
+    FEED_URL="$SPARKLE_FEED_URL_OVERRIDE"
+fi
+
 echo "Building $APP_NAME ($BUILD_CONFIG)..."
 
 swift build -c "$BUILD_CONFIG" --product "$APP_NAME"

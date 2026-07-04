@@ -63,10 +63,13 @@ struct SettingsPopoverView: View {
             .buttonStyle(.plain)
 
             SettingsPopoverActionRow(
-                title: "Check for Updates",
+                title: updateCheckTitle,
                 icon: "arrow.clockwise",
-                disabled: updaterController?.isAvailable != true
+                disabled: updateCheckDisabled
             ) {
+                guard updaterController?.updateViewModel.state.allowsManualCheck == true else {
+                    return
+                }
                 updaterController?.checkForUpdates(nil)
             }
 
@@ -79,6 +82,32 @@ struct SettingsPopoverView: View {
             vadEnabled = VADSettings.enabled
             hasCustomPrompt = CleanupPromptStore.hasCustomPrompt
         }
+    }
+
+    private var updateCheckTitle: String {
+        switch updaterController?.updateViewModel.state ?? .idle {
+        case .idle, .notFound:
+            "Check for Updates"
+        case .checking:
+            "Checking for Updates..."
+        case .updateAvailable:
+            "Update Available"
+        case .downloading:
+            "Downloading Update..."
+        case .extracting:
+            "Preparing Update..."
+        case .installing:
+            "Installing Update..."
+        case .failed:
+            "Retry Update Check"
+        }
+    }
+
+    private var updateCheckDisabled: Bool {
+        guard let updaterController, updaterController.isAvailable else {
+            return true
+        }
+        return !updaterController.updateViewModel.state.allowsManualCheck
     }
 
     private var errorNotificationsRow: some View {

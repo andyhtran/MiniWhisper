@@ -324,10 +324,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     ) async {
         let identifier = response.notification.request.identifier
         guard identifier == UpdateNotification.identifier else { return }
-        // Re-enters the in-progress update session, bringing the Sparkle
-        // alert into focus.
+        // The update session is still pending in the updater's view model;
+        // opening the popover surfaces the banner with its Install action.
         await MainActor.run {
-            self.updaterController.checkForUpdates(nil)
+            self.revealMenuBarInterface()
         }
     }
 

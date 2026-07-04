@@ -4,6 +4,12 @@ import Security
 #if canImport(Sparkle) && ENABLE_SPARKLE
 @MainActor
 func makeUpdaterController() -> UpdaterProviding {
+    #if DEBUG
+    if let simulator = UpdateSimulator.configured() {
+        return simulator
+    }
+    #endif
+
     let bundleURL = Bundle.main.bundleURL
 
     guard bundleURL.pathExtension == "app" else {
@@ -14,8 +20,19 @@ func makeUpdaterController() -> UpdaterProviding {
         return DisabledUpdaterController(unavailableReason: "Updates unavailable in this build.")
     }
 
+    guard hasUpdateFeed(bundle: .main) else {
+        return DisabledUpdaterController(unavailableReason: "Updates unavailable in this build.")
+    }
+
     let savedAutoUpdate = UpdaterDefaults.savedAutoUpdateEnabled()
     return SparkleUpdaterController(savedAutoUpdate: savedAutoUpdate)
+}
+
+private func hasUpdateFeed(bundle: Bundle) -> Bool {
+    guard let feedURL = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String else {
+        return false
+    }
+    return !feedURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 }
 
 private func isDeveloperIDSigned(bundleURL: URL) -> Bool {
@@ -37,6 +54,12 @@ private func isDeveloperIDSigned(bundleURL: URL) -> Bool {
 #else
 @MainActor
 func makeUpdaterController() -> UpdaterProviding {
-    DisabledUpdaterController()
+    #if DEBUG
+    if let simulator = UpdateSimulator.configured() {
+        return simulator
+    }
+    #endif
+
+    return DisabledUpdaterController()
 }
 #endif

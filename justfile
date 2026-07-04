@@ -1,7 +1,5 @@
 app_name := "MiniWhisper"
 bundle_id := "com.miniwhisper.dev"
-signing_id := env("CODESIGN_IDENTITY", "-")
-dev_signing_id := env("DEV_CODESIGN_IDENTITY", "-")
 team_id := env("CODESIGN_TEAM_ID", "")
 install_path := "/Applications/MiniWhisper Dev.app"
 
@@ -15,16 +13,7 @@ dev: kill build package
     set -euo pipefail
     rm -rf "{{install_path}}"
     cp -R build/{{app_name}}.app "{{install_path}}"
-    # Sign embedded frameworks
-    for fw in "{{install_path}}"/Contents/Frameworks/*.framework; do
-        [ -d "$fw" ] && codesign --force --sign "{{dev_signing_id}}" "$fw"
-    done
-    if [ -f "{{install_path}}"/Contents/Resources/miniwhispercli ]; then
-        codesign --force --sign "{{dev_signing_id}}" "{{install_path}}"/Contents/Resources/miniwhispercli
-    fi
-    codesign --force --sign "{{dev_signing_id}}" \
-        --entitlements build/MiniWhisper.entitlements \
-        "{{install_path}}"
+    bash Scripts/sign-dev-app.sh "{{install_path}}"
     rm -rf build/{{app_name}}.app
     open "{{install_path}}"
 
@@ -101,6 +90,11 @@ generate-appcast-beta zip:
 [group('sparkle')]
 verify-appcast version="":
     ./Scripts/verify-appcast.sh {{version}}
+
+# Local E2E test of the update flow: real Sparkle against a localhost appcast
+[group('sparkle')]
+test-update:
+    bash Scripts/test-update-flow.sh
 
 # Kill running instance
 [group('dev')]
