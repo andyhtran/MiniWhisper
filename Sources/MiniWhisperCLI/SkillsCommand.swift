@@ -10,6 +10,10 @@ enum RuntimeSkills {
         RuntimeSkillInfo(
             name: "core",
             description: "Local transcription routing, model choice, output artifacts, and diagnostics"
+        ),
+        RuntimeSkillInfo(
+            name: "timestamps",
+            description: "Timed transcripts, subtitles, captions, overlays, and edit-boundary timing"
         )
     ]
 
@@ -20,6 +24,7 @@ enum RuntimeSkills {
     static func markdown(named name: String) -> String? {
         switch name {
         case "core": return CoreSkill.text
+        case "timestamps": return TimestampsSkill.text
         default: return nil
         }
     }
@@ -41,6 +46,7 @@ enum CoreSkill {
 
         Start here:
           miniwhispercli skills get core
+          miniwhispercli skills get timestamps  # for subtitles, captions, overlays, or edit timing
           miniwhispercli skills list --json
 
         Version-matched guidance lives in the installed binary.
@@ -55,106 +61,127 @@ enum CoreSkill {
 
         # MiniWhisper Core
 
-        Use MiniWhisper CLI when the user asks to transcribe a local audio file with MiniWhisper, Parakeet, or local Whisper.
+        Use MiniWhisper CLI for local transcription of an audio file.
 
         ## Core Workflow
 
-        1. Confirm the audio file path exists before running transcription.
+        1. Confirm the audio file path exists.
         2. Choose the model from the language and user request.
-        3. Choose the output shape based on the requested artifact.
-        4. Run `miniwhispercli transcribe <audio>` with the smallest flag set that satisfies the request.
-        5. Use diagnostics/setup commands only if transcription fails or model readiness is uncertain.
+        3. Run `miniwhispercli transcribe <audio>` with the smallest flag set that satisfies the request.
+        4. Treat stdout or the requested output file as the transcript artifact.
 
         ## Model Routing
 
-        Default to Parakeet v3:
+        Use Parakeet for speed. Use Whisper Turbo when every word needs to make it through.
 
-        - Use `miniwhispercli transcribe <audio>` for English and supported European languages.
-        - Parakeet v3 is the fast default and supports 25 European languages with automatic language detection.
-        - If Parakeet is missing, `miniwhispercli models install parakeet` installs it. First transcription also downloads it automatically.
+        Default to Parakeet v3 for fast drafts, notes, search, rough summaries, and low-risk local transcription. Parakeet supports 25 European languages with automatic language detection.
 
-        Use Whisper when broader language coverage matters:
+        Use Whisper Turbo for published transcripts, quotes, handoffs, edit decisions, broad language coverage, or anything where dropped words are unacceptable. Whisper uses `whisper-large-v3-turbo` through whisper.cpp and defaults to `--language auto`.
 
-        - Use `miniwhispercli transcribe <audio> --model whisper` for non-European languages or when the user asks for multilingual/broad language coverage.
-        - Whisper uses `whisper-large-v3-turbo` through whisper.cpp and defaults to `--language auto`.
-        - Pass `--language <code>` only when the user gives a known language and wants to avoid auto-detection.
-        - If Whisper is missing, `miniwhispercli models install whisper` installs the model and VAD helper. First Whisper transcription also downloads them automatically.
+        ## Common Commands
 
-        ## Transcription Choices
-
-        - Plain transcript for chat or clipboard use:
+        - Fast plain transcript:
           `miniwhispercli transcribe <audio>`
-        - Non-European or broad multilingual transcription:
+        - Word-complete transcript:
           `miniwhispercli transcribe <audio> --model whisper`
-        - Structured result for agent parsing:
-          `miniwhispercli transcribe <audio> --format json`
-        - Save structured result as an artifact:
+        - JSON artifact:
           `miniwhispercli transcribe <audio> --format json -o <file> --quiet`
-        - Include word timings and performance details:
-          `miniwhispercli transcribe <audio> --timestamps word --metadata --format json -o <file>`
-        - Transcribe only part of a longer file:
+        - Transcribe part of a file:
           `miniwhispercli transcribe <audio> --from 01:20 --duration 50`
-        - Save subtitles:
-          `miniwhispercli transcribe <audio> --format srt -o <file>`
 
-        ## Advanced Source Flag
+        ## Output Contract
 
-        `--source` is Parakeet-only. It does not choose an input device and does not capture audio. The CLI always transcribes the file path passed to `transcribe`.
+        Treat stdout as the user-requested artifact. Progress, metadata, diagnostics, and native library logs may go to stderr; do not parse stderr as transcript content.
 
-        - `--source microphone` is the default and matches MiniWhisper app behavior.
-        - `--source system` matches FluidAudio's file-transcription default more closely.
-
-        Do not change `--source` unless comparing MiniWhisper output against FluidAudio behavior. Do not pass `--source` with `--model whisper`.
-
-        ## Output Rules
-
-        Treat stdout as the user-requested artifact. Progress, word timings, metadata, and diagnostics are stderr-only unless `--json` is explicitly requested.
-        Use `--json` when the agent needs the structured result on stdout.
         Prefer `--format json -o <file> --quiet` when creating a JSON artifact.
-        `--output-json <file>` is a compatibility sidecar that also writes JSON while preserving the primary output.
-        Native transcription libraries may still emit diagnostics to stderr; do not parse stderr as transcript content.
 
-        Use `--timestamps segment` or `--timestamps word` for clean timestamp data in JSON. Avoid `--word-timestamps` unless the user specifically wants the legacy stderr dump.
+        ## Timed Outputs
 
-        Use `--format srt` or `--format vtt` for subtitle artifacts. `--output-srt <file>` and `--output-vtt <file>` can create subtitle sidecars while keeping the primary output as text or JSON.
+        For timestamps, word timings, SRT/VTT, captions, overlays, or edit-boundary candidates, load:
 
-        Time ranges accept seconds, `MM:SS`, or `HH:MM:SS`:
+        `miniwhispercli skills get timestamps`
 
-        - `--from 01:20 --to 02:10`
-        - `--offset 80 --duration 50`
+        Prefer Whisper Turbo for final timed artifacts.
 
-        JSON output has this shape:
+        ## Setup And Diagnostics
 
-        ```json
-        {
-          "audio_file": "/path/to/audio.wav",
-          "engine": "parakeet",
-          "mode": "batch",
-          "model_version": "v3",
-          "model": "parakeet-tdt-v3",
-          "source": "microphone",
-          "language": "auto",
-          "range": null,
-          "text": "transcribed text",
-          "duration_seconds": 3.2,
-          "processing_time_seconds": 0.6,
-          "rtfx": 5.3,
-          "confidence": 0.97,
-          "confidence_available": true,
-          "segments": [],
-          "word_timings": []
-        }
+        If transcription fails or model readiness is uncertain, run `miniwhispercli doctor --json` or `miniwhispercli models status --json`.
+
+        ## Help
+
+        For the full command surface, run:
+
+        `miniwhispercli transcribe --help`
+        """
+}
+
+enum TimestampsSkill {
+    static let text =
+        """
+        ---
+        name: miniwhisper-timestamps
+        description: Runtime guidance for MiniWhisper timed transcripts, subtitles, captions, overlays, and edit-boundary timing.
+        ---
+
+        # MiniWhisper Timestamps
+
+        Load this after `miniwhispercli skills get core` when the output needs timing data: JSON segments, JSON words, SRT/VTT subtitles, captions, overlays, clips, or edit-boundary candidates.
+
+        ## Model Routing
+
+        Use Parakeet for speed. Use Whisper Turbo when every word needs to make it through.
+
+        - Prefer Whisper Turbo for subtitles, captions, published transcripts, quotes, edit decisions, overlays, timeline handoffs, and any source-of-truth timed artifact.
+        - Use Parakeet for quick drafts, rough timing, search, and low-risk local transcription.
+        - If Parakeet is explicitly requested for a durable timed artifact, verify the ending with a tail check before handing it off.
+
+        ## Timestamp Commands
+
+        - Segment-timed JSON:
+          `miniwhispercli transcribe <audio> --model whisper --timestamps segment --format json -o <file>`
+        - Word-timed JSON:
+          `miniwhispercli transcribe <audio> --model whisper --timestamps word --format json -o <file>`
+        - Whisper DTW token timing experiment:
+          `miniwhispercli transcribe <audio> --model whisper --align whisper-dtw --format json -o <file>`
+        - SRT subtitles:
+          `miniwhispercli transcribe <audio> --model whisper --format srt -o <file>`
+        - WebVTT subtitles:
+          `miniwhispercli transcribe <audio> --model whisper --format vtt -o <file>`
+        - Timed slice of a longer file:
+          `miniwhispercli transcribe <audio> --model whisper --from 01:20 --duration 50 --timestamps word --format json -o <file>`
+
+        Use `--output-json <file>`, `--output-srt <file>`, or `--output-vtt <file>` when a sidecar is needed while keeping the primary output as text or another format.
+
+        ## Parakeet Tail Check
+
+        Parakeet can occasionally omit the final words of a full-file transcription even when a tail-only retry can hear them. For any durable Parakeet transcript, check the ending:
+
+        ```bash
+        miniwhispercli transcribe <audio> --model parakeet -o full.txt
+        miniwhispercli transcribe <audio> --model parakeet --from <tail-start-time> -o tail.txt
         ```
 
-        ## Diagnostics And Setup
+        Compare the final sentence. If `tail.txt` contains words missing from `full.txt`, use Whisper Turbo for the final artifact or repair the Parakeet transcript only after explicit review.
 
-        Use these only when setup is uncertain or a transcription command fails:
+        ## Timing Safety
 
-        - `miniwhispercli models status --json` checks installed model readiness.
-        - `miniwhispercli models install parakeet` installs the default fast local model.
-        - `miniwhispercli models install whisper` installs optional broad multilingual support.
-        - `miniwhispercli doctor --json` checks local environment problems.
-        - `miniwhispercli transcribe --help` shows the full flag list when a needed option is unclear.
+        Treat word timestamps as edit-boundary candidates, not frame-safe cut points.
+
+        - For captions and overlays, word/segment timestamps are usually enough, then review the rendered result.
+        - For edit cuts, validate boundaries against silence, RMS/energy, and the frame grid before cutting.
+        - Do not cut solely because a word timestamp says speech ended; keep a small acoustic handle unless the downstream editor explicitly wants a hard boundary.
+        - Preserve the original audio timeline for timing work. Avoid preprocessing that removes or compacts silence before generating timestamps.
+        - If a command uses `--from`, `--to`, or `--duration`, keep the range metadata with the artifact so later tools can map the timed result back to the source file.
+
+        ## Handoff Checklist
+
+        Report:
+
+        - command run,
+        - model used,
+        - output files written,
+        - whether a Parakeet tail check was needed or performed,
+        - any uncertain words or timing spans that need human review.
         """
 }
 
@@ -249,6 +276,7 @@ enum SkillsCommand {
             Console.error("Examples:")
             Console.error("  miniwhispercli skills list")
             Console.error("  miniwhispercli skills get core")
+            Console.error("  miniwhispercli skills get timestamps")
             return 2
         }
 
@@ -290,7 +318,7 @@ enum SkillsCommand {
 
     private static func skillsListNextCommands(_ skills: [RuntimeSkillInfo]) -> [String] {
         let available = Set(skills.map { $0.name })
-        return ["core", "setup", "auth"]
+        return ["core", "timestamps"]
             .filter { available.contains($0) }
             .map { "miniwhispercli skills get \($0)" }
     }
@@ -313,6 +341,7 @@ enum SkillsCommand {
               miniwhispercli skills list
               miniwhispercli skills list --json
               miniwhispercli skills get core
+              miniwhispercli skills get timestamps
             """
         )
     }

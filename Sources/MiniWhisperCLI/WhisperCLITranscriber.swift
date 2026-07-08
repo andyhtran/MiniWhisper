@@ -27,6 +27,30 @@ enum WhisperLanguageChoice: Equatable {
     }
 }
 
+enum WhisperAlignmentMode: String, Equatable {
+    case none
+    case token = "whisper-token"
+    case dtw = "whisper-dtw"
+
+    var displayValue: String { rawValue }
+    var needsWordTimestamps: Bool { self != .none }
+    var needsDTW: Bool { self == .dtw }
+
+    static func parse(_ value: String) throws -> WhisperAlignmentMode {
+        guard let mode = WhisperAlignmentMode(rawValue: value) else {
+            throw CLIError.usage("Invalid align mode: \(value). Expected none, whisper-token, or whisper-dtw.")
+        }
+        return mode
+    }
+}
+
+private struct WhisperTokenTiming {
+    let text: String
+    let startTime: Double
+    let endTime: Double
+    let confidence: Float
+}
+
 struct WhisperCLIResult {
     let text: String
     let language: String
@@ -34,6 +58,7 @@ struct WhisperCLIResult {
     let processingTime: Double
     let model: String
     let segments: [SegmentTimingOutput]
+    let wordTimings: [WordTimingOutput]
 }
 
 private final class CLIWhisperInputState: @unchecked Sendable {
@@ -54,10 +79,18 @@ private final class CLIWhisperContext: @unchecked Sendable {
         self.vadModelPath = vadModelPath
     }
 
-    static func load(modelPath: String, vadModelPath: String?) throws -> CLIWhisperContext {
+    static func load(
+        modelPath: String,
+        vadModelPath: String?,
+        alignmentMode: WhisperAlignmentMode
+    ) throws -> CLIWhisperContext {
         var params = whisper_context_default_params()
         params.use_gpu = true
-        params.flash_attn = true
+        params.flash_attn = !alignmentMode.needsDTW
+        params.dtw_token_timestamps = alignmentMode.needsDTW
+        if alignmentMode.needsDTW {
+            params.dtw_aheads_preset = WHISPER_AHEADS_LARGE_V3_TURBO
+        }
 
         guard let context = whisper_init_from_file_with_params(modelPath, params) else {
             throw WhisperCLIError.modelLoadFailed
@@ -69,8 +102,9 @@ private final class CLIWhisperContext: @unchecked Sendable {
     func transcribe(
         samples: [Float],
         language: WhisperLanguageChoice,
+        alignmentMode: WhisperAlignmentMode,
         useVAD: Bool
-    ) throws -> (text: String, language: String, segments: [SegmentTimingOutput]) {
+    ) throws -> (text: String, language: String, segments: [SegmentTimingOutput], wordTimings: [WordTimingOutput]) {
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         var languageCString: UnsafeMutablePointer<CChar>?
         var vadCString: UnsafeMutablePointer<CChar>?
@@ -113,6 +147,7 @@ private final class CLIWhisperContext: @unchecked Sendable {
         params.no_timestamps = false
         params.single_segment = false
         params.no_context = true
+        params.token_timestamps = alignmentMode.needsWordTimestamps
         params.temperature = 0.0
         params.n_threads = max(1, Int32(ProcessInfo.processInfo.activeProcessorCount - 2))
 
@@ -138,6 +173,10 @@ private final class CLIWhisperContext: @unchecked Sendable {
             }
         }
 
+        let wordTimings = alignmentMode.needsWordTimestamps
+            ? extractWordTimings(segmentCount: segmentCount)
+            : []
+
         let languageID = whisper_full_lang_id(context)
         let detectedLanguage: String
         if let languageString = whisper_lang_str(languageID) {
@@ -146,11 +185,114 @@ private final class CLIWhisperContext: @unchecked Sendable {
             detectedLanguage = language.displayValue
         }
 
-        return (text, detectedLanguage, segments)
+        return (text, detectedLanguage, segments, wordTimings)
+    }
+
+    private func extractWordTimings(segmentCount: Int32) -> [WordTimingOutput] {
+        var tokenTimings: [WhisperTokenTiming] = []
+
+        for segmentIndex in 0..<segmentCount {
+            let tokenCount = whisper_full_n_tokens(context, segmentIndex)
+            for tokenIndex in 0..<tokenCount {
+                guard let tokenCString = whisper_full_get_token_text(context, segmentIndex, tokenIndex) else {
+                    continue
+                }
+
+                let text = String(cString: tokenCString)
+                guard shouldUseToken(text) else { continue }
+
+                let tokenData = whisper_full_get_token_data(context, segmentIndex, tokenIndex)
+                let startTime = Double(tokenData.t0) / 100
+                let endTime = Double(tokenData.t1) / 100
+                guard startTime.isFinite, endTime.isFinite, endTime > startTime else {
+                    continue
+                }
+
+                tokenTimings.append(
+                    WhisperTokenTiming(
+                        text: text,
+                        startTime: startTime,
+                        endTime: endTime,
+                        confidence: tokenData.p
+                    )
+                )
+            }
+        }
+
+        return WhisperWordTimingBuilder.mergeTokensIntoWords(tokenTimings)
+    }
+
+    private func shouldUseToken(_ text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        if text.hasPrefix("[") && text.hasSuffix("]") { return false }
+        if text.allSatisfy({ $0.isWhitespace }) { return false }
+        return true
     }
 
     deinit {
         whisper_free(context)
+    }
+}
+
+private enum WhisperWordTimingBuilder {
+    private static let tokenBoundaryCharacters = CharacterSet(charactersIn: " \n\t▁")
+
+    static func mergeTokensIntoWords(_ tokenTimings: [WhisperTokenTiming]) -> [WordTimingOutput] {
+        guard !tokenTimings.isEmpty else { return [] }
+
+        var words: [WordTimingOutput] = []
+        var currentWord = ""
+        var currentStart: Double?
+        var currentEnd = 0.0
+        var confidences: [Float] = []
+
+        for timing in tokenTimings {
+            let startsNewWord = timing.text.hasPrefix(" ")
+                || timing.text.hasPrefix("\n")
+                || timing.text.hasPrefix("\t")
+                || timing.text.hasPrefix("▁")
+
+            if startsNewWord, !currentWord.isEmpty, let start = currentStart {
+                words.append(
+                    WordTimingOutput(
+                        word: currentWord,
+                        startTime: start,
+                        endTime: currentEnd,
+                        confidence: average(confidences)
+                    )
+                )
+                currentWord = ""
+                confidences = []
+                currentStart = nil
+            }
+
+            let cleanToken = timing.text.trimmingCharacters(in: tokenBoundaryCharacters)
+            guard !cleanToken.isEmpty else { continue }
+            if currentStart == nil || currentWord.isEmpty {
+                currentStart = timing.startTime
+            }
+            currentWord += cleanToken
+            currentEnd = timing.endTime
+            confidences.append(timing.confidence)
+        }
+
+        if !currentWord.isEmpty, let start = currentStart {
+            words.append(
+                WordTimingOutput(
+                    word: currentWord,
+                    startTime: start,
+                    endTime: currentEnd,
+                    confidence: average(confidences)
+                )
+            )
+        }
+
+        return words
+    }
+
+    private static func average(_ confidences: [Float]) -> Float {
+        guard !confidences.isEmpty else { return 0 }
+        return confidences.reduce(0, +) / Float(confidences.count)
     }
 }
 
@@ -161,7 +303,12 @@ enum WhisperCLITranscriber {
         try await ensureModels(quiet: quiet)
     }
 
-    static func transcribe(audioURL: URL, language: WhisperLanguageChoice, quiet: Bool) async throws -> WhisperCLIResult {
+    static func transcribe(
+        audioURL: URL,
+        language: WhisperLanguageChoice,
+        alignmentMode: WhisperAlignmentMode,
+        quiet: Bool
+    ) async throws -> WhisperCLIResult {
         try await ensureModels(quiet: quiet)
 
         if !quiet {
@@ -171,18 +318,24 @@ enum WhisperCLITranscriber {
         let vadPath = FileManager.default.fileExists(atPath: MiniWhisperPaths.whisperVADModel.path)
             ? MiniWhisperPaths.whisperVADModel.path
             : nil
-        let context = try CLIWhisperContext.load(modelPath: MiniWhisperPaths.whisperModel.path, vadModelPath: vadPath)
+        let context = try CLIWhisperContext.load(
+            modelPath: MiniWhisperPaths.whisperModel.path,
+            vadModelPath: vadPath,
+            alignmentMode: alignmentMode
+        )
 
         if !quiet {
-            Console.error("Transcribing \(audioURL.path) (batch, model: whisper, language: \(language.displayValue))...")
+            let alignment = alignmentMode == .none ? "none" : alignmentMode.displayValue
+            Console.error("Transcribing \(audioURL.path) (batch, model: whisper, language: \(language.displayValue), align: \(alignment))...")
         }
 
         let samples = try resampleTo16kHz(audioURL: audioURL)
         let audioDuration = AudioMetadata.durationSeconds(for: audioURL) ?? 0
         let start = Date()
-        let useVAD = vadPath != nil
+        // VAD compacts audio before decode, and whisper.cpp token timestamps stay on that compacted timeline.
+        let useVAD = vadPath != nil && !alignmentMode.needsWordTimestamps
         var result = try await Task.detached {
-            try context.transcribe(samples: samples, language: language, useVAD: useVAD)
+            try context.transcribe(samples: samples, language: language, alignmentMode: alignmentMode, useVAD: useVAD)
         }.value
         if result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            useVAD,
@@ -191,7 +344,7 @@ enum WhisperCLITranscriber {
                 Console.error("Whisper VAD produced an empty transcript; retrying without VAD...")
             }
             result = try await Task.detached {
-                try context.transcribe(samples: samples, language: language, useVAD: false)
+                try context.transcribe(samples: samples, language: language, alignmentMode: alignmentMode, useVAD: false)
             }.value
         }
         let processingTime = Date().timeIntervalSince(start)
@@ -202,7 +355,8 @@ enum WhisperCLITranscriber {
             audioDuration: audioDuration,
             processingTime: processingTime,
             model: modelName,
-            segments: result.segments
+            segments: result.segments,
+            wordTimings: result.wordTimings
         )
     }
 

@@ -62,6 +62,7 @@ enum Help {
 
             Start here (for AI agents):
               miniwhispercli skills get core
+              miniwhispercli skills get timestamps
               miniwhispercli skills list --json
 
             Version-matched guidance. Load core first; use the JSON list for available guides.
@@ -88,6 +89,7 @@ enum Help {
 
             Start here (for AI agents):
               miniwhispercli skills get core
+              miniwhispercli skills get timestamps
               miniwhispercli skills list --json
 
             Version-matched guidance. Load core first; use the JSON list for available guides.
@@ -103,6 +105,7 @@ enum Help {
             Agent integration:
               skills list              List bundled runtime guides
               skills get core          Print the agent-facing core guide
+              skills get timestamps    Print timed-transcript guidance
               skill status             Show agent skill install status
               skill install            Preview discovery-stub install
               skill install --apply    Install the discovery stub
@@ -125,6 +128,7 @@ enum Help {
               miniwhispercli --help --full
               miniwhispercli skills list
               miniwhispercli skills get core
+              miniwhispercli skills get timestamps
             """
         )
     }
@@ -167,6 +171,8 @@ enum Help {
                   --model <parakeet|whisper>          Transcription model (default: parakeet)
                   --source <microphone|system>        Parakeet audio-source normalization
                   --language <auto|code>              Whisper language (default: auto)
+                  --align <none|whisper-token|whisper-dtw>
+                                                          Whisper word-timing source
                   --from <time>                       Start offset; seconds, MM:SS, or HH:MM:SS
                   --to <time>                         End offset; seconds, MM:SS, or HH:MM:SS
                   --offset <time>                     Start offset as an alternative to --from
@@ -186,6 +192,7 @@ enum Help {
             More help:
               miniwhispercli <command> --help
               miniwhispercli skills get core
+              miniwhispercli skills get timestamps
 
             Claude skills: \(MiniWhisperPaths.claudeSkills.path)
             """
@@ -206,6 +213,8 @@ enum Help {
               --source <microphone|system>
                                         Parakeet audio-source normalization (default: microphone)
               --language <auto|code>     Whisper language (default: auto)
+              --align <none|whisper-token|whisper-dtw>
+                                        Whisper word-timing source; non-none implies --timestamps word
               --from <time>              Start offset; accepts seconds, MM:SS, or HH:MM:SS
               --to <time>                End offset; accepts seconds, MM:SS, or HH:MM:SS
               --offset <time>            Start offset as an alternative to --from
@@ -229,6 +238,7 @@ enum Help {
               miniwhispercli transcribe audio.wav
               miniwhispercli transcribe audio.wav --model whisper
               miniwhispercli transcribe audio.wav --model whisper --language ja --json
+              miniwhispercli transcribe audio.wav --model whisper --align whisper-dtw --json
               miniwhispercli transcribe audio.wav --format json -o out.json --quiet
               miniwhispercli transcribe audio.wav --format srt -o out.srt
               miniwhispercli transcribe audio.wav --from 01:20 --duration 50

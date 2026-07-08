@@ -26,6 +26,8 @@ struct TranscribeOptions {
     var sourceSpecified = false
     var whisperLanguage: WhisperLanguageChoice = .auto
     var whisperLanguageSpecified = false
+    var whisperAlignmentMode: WhisperAlignmentMode = .none
+    var whisperAlignmentModeSpecified = false
     var forceStreaming = false
     var timestampMode: TimestampMode = .none
     var legacyWordTimestamps = false
@@ -146,6 +148,13 @@ enum TranscribeCommand {
                 options.whisperLanguageSpecified = true
             case "--streaming":
                 options.forceStreaming = true
+            case "--align":
+                let value = try value(after: argument, in: arguments, at: &index)
+                options.whisperAlignmentMode = try WhisperAlignmentMode.parse(value)
+                options.whisperAlignmentModeSpecified = true
+                if options.whisperAlignmentMode != .none {
+                    options.timestampMode = .word
+                }
             case "--word-timestamps":
                 options.timestampMode = .word
                 options.legacyWordTimestamps = true
@@ -232,6 +241,15 @@ enum TranscribeCommand {
             if options.forceStreaming {
                 throw CLIError.usage("`--streaming` applies only to `--model parakeet`.")
             }
+        }
+
+        if options.model == .parakeet,
+           options.whisperAlignmentModeSpecified,
+           options.whisperAlignmentMode != .none {
+            throw CLIError.usage("`--align` applies only to `--model whisper`.")
+        }
+        if options.whisperAlignmentModeSpecified, options.whisperAlignmentMode != .none {
+            options.timestampMode = .word
         }
 
         return options
@@ -373,7 +391,7 @@ enum TranscribeCommand {
                 segments: jsonSegments,
                 subtitleSegments: subtitleSegments,
                 wordTimings: jsonWordTimings,
-                timingsConfirmed: nil
+                timingsConfirmed: jsonWordTimings.isEmpty ? nil : true
             )
         } catch {
             await manager.cleanup()
@@ -390,8 +408,13 @@ enum TranscribeCommand {
         let result = try await WhisperCLITranscriber.transcribe(
             audioURL: audioURL,
             language: options.whisperLanguage,
+            alignmentMode: effectiveWhisperAlignmentMode(for: options),
             quiet: options.quiet
         )
+        let jsonWordTimings = options.timestampMode == .word ? result.wordTimings : []
+        let subtitleSegments = jsonWordTimings.isEmpty
+            ? result.segments
+            : SubtitleCueBuilder.cues(text: result.text, duration: result.audioDuration, words: jsonWordTimings)
 
         return TranscriptionJSONOutput(
             audioFile: displayAudioURL.path,
@@ -411,10 +434,17 @@ enum TranscribeCommand {
             segments: options.timestampMode == .segment || options.timestampMode == .word
                 ? result.segments
                 : [],
-            subtitleSegments: result.segments,
-            wordTimings: [],
-            timingsConfirmed: nil
+            subtitleSegments: subtitleSegments,
+            wordTimings: jsonWordTimings,
+            timingsConfirmed: jsonWordTimings.isEmpty ? nil : true
         )
+    }
+
+    private static func effectiveWhisperAlignmentMode(for options: TranscribeOptions) -> WhisperAlignmentMode {
+        if options.whisperAlignmentModeSpecified {
+            return options.whisperAlignmentMode
+        }
+        return options.timestampMode == .word ? .token : .none
     }
 
     private static func value(after option: String, in arguments: [String], at index: inout Int) throws -> String {
