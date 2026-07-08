@@ -38,25 +38,24 @@ enum MiniWhisperPaths {
         whisperModels.appendingPathComponent("ggml-silero-v6.2.0.bin")
     }
 
-    static var documentSkills: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents", isDirectory: true)
-            .appendingPathComponent("MiniWhisper", isDirectory: true)
-            .appendingPathComponent("skills", isDirectory: true)
-    }
-
-    static var coreSkillCopy: URL {
-        documentSkills.appendingPathComponent(CoreSkill.directoryName, isDirectory: true)
-    }
-
     static var claudeSkills: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude", isDirectory: true)
             .appendingPathComponent("skills", isDirectory: true)
     }
 
+    static var codexSkills: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("skills", isDirectory: true)
+    }
+
     static var coreSkillClaudeInstall: URL {
         claudeSkills.appendingPathComponent(CoreSkill.directoryName, isDirectory: true)
+    }
+
+    static var coreSkillCodexInstall: URL {
+        codexSkills.appendingPathComponent(CoreSkill.directoryName, isDirectory: true)
     }
 }
 
@@ -70,8 +69,10 @@ struct PathsOutput: Encodable {
     let whisperModelInstalled: Bool
     let whisperVADModel: String
     let whisperVADModelInstalled: Bool
-    let documentSkills: String
     let claudeSkills: String
+    let claudeSkill: String
+    let codexSkills: String
+    let codexSkill: String
 
     enum CodingKeys: String, CodingKey {
         case executable
@@ -83,8 +84,10 @@ struct PathsOutput: Encodable {
         case whisperModelInstalled = "whisper_model_installed"
         case whisperVADModel = "whisper_vad_model"
         case whisperVADModelInstalled = "whisper_vad_model_installed"
-        case documentSkills = "document_skills"
         case claudeSkills = "claude_skills"
+        case claudeSkill = "claude_skill"
+        case codexSkills = "codex_skills"
+        case codexSkill = "codex_skill"
     }
 }
 
@@ -112,8 +115,10 @@ enum PathsCommand {
             whisperModelInstalled: FileManager.default.fileExists(atPath: MiniWhisperPaths.whisperModel.path),
             whisperVADModel: MiniWhisperPaths.whisperVADModel.path,
             whisperVADModelInstalled: FileManager.default.fileExists(atPath: MiniWhisperPaths.whisperVADModel.path),
-            documentSkills: MiniWhisperPaths.documentSkills.path,
-            claudeSkills: MiniWhisperPaths.claudeSkills.path
+            claudeSkills: MiniWhisperPaths.claudeSkills.path,
+            claudeSkill: MiniWhisperPaths.coreSkillClaudeInstall.path,
+            codexSkills: MiniWhisperPaths.codexSkills.path,
+            codexSkill: MiniWhisperPaths.coreSkillCodexInstall.path
         )
 
         if emitJSON {
@@ -136,8 +141,10 @@ enum PathsCommand {
             MiniWhisper Whisper models: \(output.miniWhisperWhisperModels)
             Whisper model: \(status(output.whisperModelInstalled)) \(output.whisperModel)
             Whisper VAD model: \(status(output.whisperVADModelInstalled)) \(output.whisperVADModel)
-            Document skills: \(output.documentSkills)
             Claude skills: \(output.claudeSkills)
+            Claude discovery skill: \(output.claudeSkill)
+            Codex skills: \(output.codexSkills)
+            Codex discovery skill: \(output.codexSkill)
             """
         )
         return 0

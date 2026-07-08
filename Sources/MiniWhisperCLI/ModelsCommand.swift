@@ -51,7 +51,7 @@ enum ModelsCommand {
         let rest = Array(arguments.dropFirst())
 
         switch subcommand {
-        case "-h", "--help", "help":
+        case "-h", "--help":
             printHelp()
             return 0
         case "status":

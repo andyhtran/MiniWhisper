@@ -92,11 +92,14 @@ enum DoctorCommand {
             )
         )
 
+        let claudeSkillDirExists = FileManager.default.fileExists(atPath: MiniWhisperPaths.claudeSkills.path)
         checks.append(
             DoctorCheck(
-                name: "Skill directory",
-                status: FileManager.default.fileExists(atPath: MiniWhisperPaths.documentSkills.path) ? "ok" : "warning",
-                detail: MiniWhisperPaths.documentSkills.path
+                name: "Claude skill directory",
+                status: claudeSkillDirExists ? "ok" : "warning",
+                detail: claudeSkillDirExists
+                    ? MiniWhisperPaths.claudeSkills.path
+                    : "Missing. `miniwhispercli skill install --apply` will create it."
             )
         )
 
