@@ -3,6 +3,16 @@
     <channel>
         <title>MiniWhisper</title>
         <item>
+            <title>1.9.0</title>
+            <pubDate>Tue, 07 Jul 2026 22:39:47 -0400</pubDate>
+            <link>https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml</link>
+            <sparkle:version>35</sparkle:version>
+            <sparkle:shortVersionString>1.9.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/andyhtran/MiniWhisper/releases/download/v1.9.0/MiniWhisper-1.9.0.zip" length="12845044" type="application/octet-stream" sparkle:edSignature="HpbMgcQAoAqyr2iNHe15lLQ+YXlQiuVC18RPtzSFE/jUnGUlH6PqTmJDkX7bjPs9bEE3M4beek6khfjIHVX+Cw=="/>
+        </item>
+        <item>
             <title>1.8.0</title>
             <pubDate>Sat, 04 Jul 2026 14:04:25 -0400</pubDate>
             <link>https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml</link>
@@ -21,16 +31,6 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/andyhtran/MiniWhisper/releases/download/v1.7.5/MiniWhisper-1.7.5.zip" length="12771861" type="application/octet-stream" sparkle:edSignature="ypMwhGVo29+e2Wt3RQks3IRYCro4/vuFA8bmKaEOrNC8xuzHriC/WG48WL1Q915WeNFejFAPXiizjIAxMP9XBA=="/>
-        </item>
-        <item>
-            <title>1.7.4</title>
-            <pubDate>Thu, 02 Jul 2026 18:50:07 -0400</pubDate>
-            <link>https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml</link>
-            <sparkle:version>32</sparkle:version>
-            <sparkle:shortVersionString>1.7.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/andyhtran/MiniWhisper/releases/download/v1.7.4/MiniWhisper-1.7.4.zip" length="12774415" type="application/octet-stream" sparkle:edSignature="DKTcW5FqCPJIDufQWztc2YIMIQ8M47d2UfLEXrmRHk4SE6x9xELuTWVu7FvS9kFtDJWFUrhdesKj4dDkQRb0DA=="/>
         </item>
     </channel>
 </rss>
