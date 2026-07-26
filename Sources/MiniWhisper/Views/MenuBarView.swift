@@ -440,6 +440,14 @@ private struct ShortcutRow: View {
                     Spacer(minLength: 12)
 
                     if let shortcut = CustomShortcutStorage.get(name) {
+                        if shortcut.needsRerecording {
+                            // Nothing can register this binding, so it renders
+                            // like any other while never firing.
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                                .help("This shortcut can no longer be registered. Record a new one.")
+                        }
                         Text(shortcut.compactDisplayString)
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
                             .foregroundColor(.secondary)

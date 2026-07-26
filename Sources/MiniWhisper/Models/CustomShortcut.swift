@@ -8,6 +8,45 @@ enum FnKeyCode {
     static func isFnKey(_ keyCode: UInt16) -> Bool { keyCodes.contains(keyCode) }
 }
 
+/// Keys that carry `kCGEventFlagMaskSecondaryFn` on their own.
+///
+/// macOS sets that flag for the whole function-key group whether or not Fn is
+/// physically held — pressing ↑ reports it exactly like Fn+↑ does. So the flag
+/// cannot be read as "the user held Fn" for these key codes, and anything that
+/// does read it that way must exclude them or it rejects every arrow, F-key and
+/// navigation key as an unbindable Fn chord.
+enum FunctionKeyGroup {
+    static let keyCodes: Set<UInt16> = {
+        let codes: [Int] = [
+            kVK_LeftArrow, kVK_RightArrow, kVK_DownArrow, kVK_UpArrow,
+            kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6,
+            kVK_F7, kVK_F8, kVK_F9, kVK_F10, kVK_F11, kVK_F12,
+            kVK_Home, kVK_End, kVK_PageUp, kVK_PageDown,
+            kVK_ForwardDelete,
+        ]
+        return Set(codes.map(UInt16.init))
+    }()
+
+    /// True when the Fn flag on an event for this key says nothing about what
+    /// the user was holding.
+    static func setsSecondaryFnIntrinsically(_ keyCode: UInt16) -> Bool {
+        keyCodes.contains(keyCode)
+    }
+
+    /// Whether an event's Fn flag can be read as "the user was holding Fn".
+    ///
+    /// `fnKeyIsDown` is the tracked state of the physical key, which the flag
+    /// alone cannot substitute for. Function-group keys answer false whatever is
+    /// held: Fn+↑ and a plain ↑ are indistinguishable in the flag, and the
+    /// useful reading of the pair is the plain key — an Fn chord could not be
+    /// bound anyway.
+    static func indicatesHeldFn(
+        keyCode: UInt16, secondaryFnFlagSet: Bool, fnKeyIsDown: Bool
+    ) -> Bool {
+        (secondaryFnFlagSet || fnKeyIsDown) && !setsSecondaryFnIntrinsically(keyCode)
+    }
+}
+
 extension CGEventFlags {
     var modifierFlags: NSEvent.ModifierFlags {
         var m = NSEvent.ModifierFlags()
@@ -25,6 +64,12 @@ struct CustomShortcut: Codable, Equatable, Hashable {
     let option: Bool
     let control: Bool
     let shift: Bool
+    /// "Fn was physically held down as a modifier", and nothing else.
+    ///
+    /// Narrower than it looks, and kept only because persisted shortcuts encode
+    /// it: it is meaningless on function-group key codes, which report Fn
+    /// intrinsically, and it is never set when Fn *is* the bound key (see
+    /// `isFnOnly`). Read it through `usesFnAsModifier` rather than directly.
     let fn: Bool
 
     init(
@@ -43,22 +88,13 @@ struct CustomShortcut: Codable, Equatable, Hashable {
         self.fn = fn
     }
 
-    func matches(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, fnPressed: Bool) -> Bool {
-        guard self.keyCode == keyCode else { return false }
-        return self.command == modifiers.contains(.command)
-            && self.option == modifiers.contains(.option)
-            && self.control == modifiers.contains(.control)
-            && self.shift == modifiers.contains(.shift)
-            && self.fn == fnPressed
-    }
-
     var compactDisplayString: String {
         var str = ""
         if control { str += "Ctrl+" }
         if option { str += "Option+" }
         if shift { str += "Shift+" }
         if command { str += "Cmd+" }
-        if fn { str += "Fn+" }
+        if usesFnAsModifier { str += "Fn+" }
         str += keyCodeDisplayName
         return str
     }
@@ -69,6 +105,15 @@ struct CustomShortcut: Codable, Equatable, Hashable {
 
     var isFnOnly: Bool {
         FnKeyCode.isFnKey(keyCode) && !command && !option && !control && !shift
+    }
+
+    /// Whether the stored `fn` flag actually records a held Fn key.
+    ///
+    /// Older builds set `fn` for every function-group key because the system
+    /// reports the flag for them unconditionally, so those stored flags carry no
+    /// information and are ignored here — the binding is a plain chord.
+    var usesFnAsModifier: Bool {
+        fn && !FunctionKeyGroup.setsSecondaryFnIntrinsically(keyCode)
     }
 
     static func keyCodeToDisplayName(_ keyCode: UInt16) -> String {

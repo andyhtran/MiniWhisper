@@ -230,17 +230,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             manager?.recordingDidEnd()
         }
 
-        // When permissions are all granted, (re)start the event tap
+        // Restart once permissions land so anything that needed Accessibility
+        // gets another attempt.
         permissions.onAllGranted = { [weak manager] in
             log.info("All permissions granted — restarting hotkey manager")
             manager?.stop()
             manager?.start()
         }
 
-        if permissions.accessibilityGranted {
-            log.info("Starting hotkey manager (accessibility already granted)")
-            manager.start()
-        } else {
+        // Started unconditionally: key chords register as system hot keys, which
+        // need no Accessibility grant, so they work on first launch. Only a
+        // bare-modifier shortcut needs the event tap, whose creation keeps being
+        // retried at watchdog cadence until the grant arrives.
+        manager.start()
+
+        // Asked for unconditionally, even though a Carbon-only shortcut set does
+        // not need it. Gating the prompt on the current bindings would make the
+        // permission appear and disappear as the user edits shortcuts; one
+        // stable requirement is the simpler story. Do not "fix" this to match
+        // the comment above.
+        if !permissions.accessibilityGranted {
             permissions.openAccessibilitySettings()
             permissions.startPolling()
         }

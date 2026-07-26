@@ -16,7 +16,8 @@ final class HotkeyManager {
 
     private let shortcutMonitor = CustomShortcutMonitor.shared
 
-    /// Thread-safe flag for cancel shortcut's enabled check (accessed from event tap thread)
+    /// Backs the cancel shortcut's enabled check, which is read from the
+    /// modifier tap's thread as well as the main actor.
     nonisolated(unsafe) var _recordingActive = false
     let recordingActiveLock = NSLock()
 
@@ -36,16 +37,22 @@ final class HotkeyManager {
         shortcutMonitor.reloadShortcuts()
     }
 
+    // Recording state feeds the cancel shortcut's enabled check, and a
+    // registered hot key swallows its chord unconditionally — so gating means
+    // registering and unregistering, not filtering at fire time. Both edges
+    // therefore have to re-derive the registrations.
     func recordingDidStart() {
         recordingActiveLock.lock()
         _recordingActive = true
         recordingActiveLock.unlock()
+        shortcutMonitor.refresh()
     }
 
     func recordingDidEnd() {
         recordingActiveLock.lock()
         _recordingActive = false
         recordingActiveLock.unlock()
+        shortcutMonitor.refresh()
     }
 
     private func setupToggleRecording() {
@@ -65,9 +72,10 @@ final class HotkeyManager {
     }
 
     private func setupAutoCleanupRecording() {
-        // Gate at event-tap time on the AI Editing setting so the
-        // shortcut passes through to the frontmost app when auto-cleanup
-        // isn't enabled. Mirrors editSelection's pattern.
+        // Gate on the AI Editing setting so the shortcut passes through to the
+        // frontmost app when auto-cleanup isn't enabled. Changing that setting
+        // must re-derive registrations, or the hot key stays registered and
+        // keeps swallowing the chord. Mirrors editSelection's pattern.
         shortcutMonitor.setEnabledCheck(for: .autoCleanupRecording) {
             EditModeSettings.behavior.autoCleanupEnabled
         }
@@ -77,10 +85,10 @@ final class HotkeyManager {
     }
 
     private func setupEditSelection() {
-        // Gate at event-tap time on the persisted setting so when edit
-        // mode is off, ⌥E (or whatever the user bound) passes through to
-        // the frontmost app instead of being consumed. UserDefaults is
-        // thread-safe — no callback wiring needed.
+        // Gate on the persisted setting so when edit mode is off, whatever the
+        // user bound passes through to the frontmost app instead of being
+        // consumed. Changing that setting must re-derive registrations so the
+        // hot key is actually dropped.
         shortcutMonitor.setEnabledCheck(for: .editSelection) {
             EditModeSettings.behavior.selectionEnabled
         }
