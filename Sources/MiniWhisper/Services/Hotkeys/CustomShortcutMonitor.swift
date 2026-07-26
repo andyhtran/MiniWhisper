@@ -8,8 +8,8 @@ private let log = Logger(subsystem: Logger.subsystem, category: "ShortcutMonitor
 /// Routes each configured shortcut to the backend that can serve it.
 ///
 /// Key chords go to Carbon, which keeps this process out of the keystroke
-/// delivery path entirely. Only bare-modifier shortcuts (Fn/Globe push-to-talk)
-/// need an event tap, and that tap sees nothing but `.flagsChanged`.
+/// delivery path entirely. Only bare-modifier shortcuts (Fn/Globe bound on its
+/// own) need an event tap, and that tap sees nothing but `.flagsChanged`.
 final class CustomShortcutMonitor: @unchecked Sendable {
     typealias ShortcutHandler = @Sendable @MainActor () -> Void
     typealias ShortcutEnabledCheck = @Sendable () -> Bool
@@ -64,10 +64,10 @@ final class CustomShortcutMonitor: @unchecked Sendable {
         modifierTap.stop()
         keyDownObserver.stop()
         // Everything able to deliver a release has just gone away, so held
-        // presses are completed rather than dropped. Dropping them would leave
-        // a hold-style action running with nothing left to end it — and stop()
-        // is called mid-session, not only at shutdown (a permission grant
-        // restarts the manager).
+        // presses are completed rather than dropped. A press left marked would
+        // make the tracker reject the next one as a repeat, so the shortcut
+        // could never fire again — and stop() is called mid-session, not only
+        // at shutdown (a permission grant restarts the manager).
         releaseStrandedPresses(keeping: [])
         fnStateMachine.reset()
         lastShadowed = []
@@ -174,8 +174,9 @@ final class CustomShortcutMonitor: @unchecked Sendable {
     }
 
     /// A registration that disappears under a held key takes its release with
-    /// it, so anything still marked pressed has to be completed by hand or a
-    /// hold-style action runs forever.
+    /// it, so anything still marked pressed has to be completed by hand: an
+    /// abandoned press makes the tracker reject every later one as a repeat,
+    /// leaving the shortcut permanently dead.
     ///
     /// Note this *performs* the key-up action, which for some shortcuts is
     /// their whole point rather than a wind-down (cancel and edit-selection both
@@ -218,8 +219,8 @@ final class CustomShortcutMonitor: @unchecked Sendable {
             guard handlerRegistry.isEnabled(name: name) else { return }
 
             // Fn held while another shortcut fires means Fn is being used as a
-            // modifier, not as push-to-talk. Retire the in-flight Fn shortcut so
-            // it cannot leave a recording running with no release to end it.
+            // modifier, not as a shortcut of its own. Retire the in-flight Fn
+            // shortcut so its press cannot be left with no release to complete it.
             // The key-down observer normally gets here first; this still matters
             // when the observer has no tap (Accessibility not granted).
             if fnStateMachine.isFnKeyDown, let cancelled = fnStateMachine.markUsedAsModifier() {

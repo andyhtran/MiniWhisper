@@ -226,8 +226,9 @@ struct HotKeyPressTracker {
     /// declaration order.
     ///
     /// A hot key unregistered while it is held never delivers its release — the
-    /// OS simply stops matching the chord — so a hold-style action would run
-    /// until the app quit. Anything dropped here has to be completed by hand.
+    /// OS simply stops matching the chord — so the press would stay marked and
+    /// every later one would be rejected as a repeat, killing the shortcut for
+    /// the rest of the session. Anything dropped here has to be completed by hand.
     mutating func drainStranded(keeping live: Set<CustomShortcutName>) -> [CustomShortcutName] {
         let stranded = CustomShortcutName.allCases.filter {
             pressed.contains($0) && !live.contains($0)

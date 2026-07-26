@@ -4,8 +4,9 @@ import os.log
 
 private let log = Logger(subsystem: Logger.subsystem, category: "CarbonHotKey")
 
-/// Which edge of a hot key fired. Both edges are delivered so a shortcut can
-/// drive hold-to-talk (start on press, stop on release), not just toggles.
+/// Which edge of a hot key fired. Both edges are delivered because some
+/// shortcuts act on release rather than press — edit-selection waits for the
+/// user's modifiers to come up before it synthesizes a copy.
 enum HotKeyPhase: Sendable {
     case pressed
     case released

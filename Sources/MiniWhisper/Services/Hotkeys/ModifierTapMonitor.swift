@@ -50,10 +50,10 @@ final class ModifierTapMonitor: @unchecked Sendable {
     /// Whether a bare modifier press must be hidden from the rest of the
     /// system, which is the only thing that justifies a filter tap here.
     ///
-    /// It is load-bearing for push-to-talk: while a modifier-only shortcut is
-    /// held, the press must not also reach whatever the system's "Press 🌐 to…"
-    /// setting is bound to, or every recording would additionally switch input
-    /// source or open the emoji picker.
+    /// It is load-bearing for any bare-modifier shortcut: the press must not
+    /// also reach whatever the system's "Press 🌐 to…" setting is bound to, or
+    /// every trigger would additionally switch input source or open the emoji
+    /// picker.
     private let suppressesModifierPress: Bool
 
     init(suppressesModifierPress: Bool = true) {

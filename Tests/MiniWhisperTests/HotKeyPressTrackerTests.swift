@@ -75,7 +75,7 @@ struct HotKeyPressTrackerTests {
     }
 
     /// A hot key unregistered mid-hold never delivers its release, so the press
-    /// has to be completed here or a hold-style action runs forever.
+    /// has to be completed here or every later press of it reads as a repeat.
     @Test func droppedRegistrationStrandsItsPress() {
         var tracker = HotKeyPressTracker()
 
