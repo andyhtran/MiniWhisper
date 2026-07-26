@@ -32,6 +32,18 @@ if [[ -f "$ROOT/appcast.xml" ]]; then
 fi
 cp "$ZIP" "$WORK_DIR/$ZIP_NAME"
 
+# Sparkle pairs release notes to an archive purely by filename, so the notes have
+# to land beside the zip under the same basename. Missing notes are not fatal —
+# the item just ships with an empty description, which is what every release
+# before 1.10.0 did — but it is silent in the update dialog, so say so here.
+NOTES_NAME="${ZIP_NAME%.zip}.html"
+if [[ -f "$ROOT/ReleaseNotes/$NOTES_NAME" ]]; then
+    cp "$ROOT/ReleaseNotes/$NOTES_NAME" "$WORK_DIR/$NOTES_NAME"
+    echo "Embedding release notes: ReleaseNotes/$NOTES_NAME"
+else
+    echo "WARNING: no ReleaseNotes/$NOTES_NAME — update dialog will show no description." >&2
+fi
+
 CHANNEL_ARGS=()
 if [[ -n "$SPARKLE_CHANNEL" ]]; then
     CHANNEL_ARGS=(--channel "$SPARKLE_CHANNEL")
