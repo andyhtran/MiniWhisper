@@ -243,6 +243,7 @@ private struct GeneralSettingsPage: View {
                             editModeBehavior = $0
                             EditModeSettings.behavior = $0
                             appState.editModeBehavior = $0
+                            appState.refreshShortcutRegistrations()
                         }
                     )
                 ) {
@@ -415,6 +416,14 @@ private struct SettingsShortcutRow: View {
                 Button("Cancel") { isEditing = false }
                     .buttonStyle(.borderless)
             } else {
+                if needsRerecording {
+                    // A stored binding no backend can register looks entirely
+                    // normal in this row, so without a marker the only symptom
+                    // is a shortcut that quietly does nothing.
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help("This shortcut can no longer be registered. Record a new one.")
+                }
                 Button(shortcutLabel) { isEditing = true }
                     .font(.system(.body, design: .monospaced))
             }
@@ -423,6 +432,10 @@ private struct SettingsShortcutRow: View {
 
     private var shortcutLabel: String {
         CustomShortcutStorage.get(name)?.compactDisplayString ?? "Not Set"
+    }
+
+    private var needsRerecording: Bool {
+        CustomShortcutStorage.get(name)?.needsRerecording ?? false
     }
 }
 

@@ -99,4 +99,114 @@ struct FnStateMachineTests {
         // Active shortcut was cleared
         #expect(sm.clearActiveFnOnlyShortcut() == nil)
     }
+
+    /// The Fn+← case: an ordinary key going down while Fn is held retires the
+    /// action the press started, and the release must not then run it a second
+    /// time or report itself as a plain tap.
+    @Test func aKeyPressedDuringTheHoldRetiresTheShortcutExactlyOnce() {
+        let sm = makeSM()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 0)
+        sm.setActiveFnOnlyShortcut(.toggleRecording)
+
+        // Observer sees the arrow key.
+        #expect(sm.markUsedAsModifier() == .toggleRecording)
+        // A second key during the same hold has nothing left to retire.
+        #expect(sm.markUsedAsModifier() == nil)
+
+        let release = sm.processFnKeyUp(captureTime: 0, hwTimestamp: 100_000_000)
+        #expect(release == .usedAsModifier)
+        #expect(sm.clearActiveFnOnlyShortcut() == nil)
+    }
+
+    /// After macOS drops an Fn key-up, the press it belonged to is still held.
+    /// The recovering press has to be able to find and complete it, or the
+    /// tracker rejects the new press as a repeat and the user's tap does
+    /// nothing at all.
+    @Test func stuckDownRecoveryLeavesTheAbandonedPressRecoverable() {
+        let sm = makeSM()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 1_000_000_000)
+        sm.setActiveFnOnlyShortcut(.toggleRecording)
+        // The matching key-up never arrives.
+
+        #expect(sm.processFnKeyDown(captureTime: 0, hwTimestamp: 7_000_000_000))
+        #expect(sm.clearActiveFnOnlyShortcut() == .toggleRecording)
+    }
+
+    /// Reading which shortcut is in flight must not hand over responsibility for
+    /// completing it — that belongs to `clearActiveFnOnlyShortcut()`.
+    @Test func readingTheActiveShortcutDoesNotClearIt() {
+        let sm = makeSM()
+        sm.setActiveFnOnlyShortcut(.toggleRecording)
+
+        #expect(sm.activeFnOnlyShortcutName == .toggleRecording)
+        #expect(sm.activeFnOnlyShortcutName == .toggleRecording)
+        #expect(sm.clearActiveFnOnlyShortcut() == .toggleRecording)
+        #expect(sm.activeFnOnlyShortcutName == nil)
+    }
+
+    /// A hold with no other key is still an ordinary trigger, however long.
+    @Test func aHoldWithNoOtherKeyStillCompletesTheShortcut() {
+        let sm = makeSM()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 0)
+        sm.setActiveFnOnlyShortcut(.toggleRecording)
+
+        let release = sm.processFnKeyUp(captureTime: 0, hwTimestamp: 2_000_000_000)
+
+        #expect(release == .fnKeyUp)
+        #expect(sm.clearActiveFnOnlyShortcut() == .toggleRecording)
+    }
+}
+
+/// macOS fires its own "press 🌐 to…" action on the *release*, so a press hidden
+/// from the system followed by a delivered release triggers exactly what hiding
+/// the press was meant to prevent.
+struct FnPressSwallowSymmetryTests {
+    @Test func aSwallowedPressMakesItsReleaseSwallowedToo() {
+        let sm = FnStateMachine()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 0)
+        sm.recordPressSwallowed(true)
+
+        _ = sm.processFnKeyUp(captureTime: 0, hwTimestamp: 100_000_000)
+        #expect(sm.consumePressSwallowed())
+    }
+
+    @Test func aPressLeftAloneLeavesItsReleaseAlone() {
+        let sm = FnStateMachine()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 0)
+        sm.recordPressSwallowed(false)
+
+        #expect(!sm.consumePressSwallowed())
+    }
+
+    /// Symmetry holds even when the hold turned out to be modifier use: the
+    /// system never saw the press either way.
+    @Test func symmetryHoldsWhenFnWasUsedAsAModifier() {
+        let sm = FnStateMachine()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 0)
+        sm.recordPressSwallowed(true)
+        _ = sm.markUsedAsModifier()
+
+        #expect(sm.processFnKeyUp(captureTime: 0, hwTimestamp: 100_000_000) == .usedAsModifier)
+        #expect(sm.consumePressSwallowed())
+    }
+
+    /// A stray release with no press behind it must not be swallowed on the
+    /// strength of an older one.
+    @Test func theSwallowDecisionIsConsumed() {
+        let sm = FnStateMachine()
+        sm.recordPressSwallowed(true)
+
+        #expect(sm.consumePressSwallowed())
+        #expect(!sm.consumePressSwallowed())
+    }
+
+    @Test func resetClearsAPendingSwallowDecision() {
+        let sm = FnStateMachine()
+        _ = sm.processFnKeyDown(captureTime: 0, hwTimestamp: 0)
+        sm.recordPressSwallowed(true)
+
+        sm.reset()
+
+        #expect(!sm.consumePressSwallowed())
+    }
 }

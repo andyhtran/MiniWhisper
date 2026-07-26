@@ -4,35 +4,8 @@ import CoreGraphics
 import AppKit
 @testable import MiniWhisper
 
-struct CustomShortcutMatchTests {
-    // kVK_ANSI_Grave = 50, kVK_ANSI_K = 40
-    static let optionGrave = CustomShortcut(keyCode: UInt16(kVK_ANSI_Grave), option: true)
-    static let fnK = CustomShortcut(keyCode: UInt16(kVK_ANSI_K), fn: true)
-
-    @Test func exactMatchSucceeds() {
-        #expect(Self.optionGrave.matches(keyCode: UInt16(kVK_ANSI_Grave), modifiers: .option, fnPressed: false))
-    }
-
-    @Test func extraFnBreaksMatch() {
-        #expect(!Self.optionGrave.matches(keyCode: UInt16(kVK_ANSI_Grave), modifiers: .option, fnPressed: true))
-    }
-
-    @Test func missingModifierBreaksMatch() {
-        #expect(!Self.optionGrave.matches(keyCode: UInt16(kVK_ANSI_Grave), modifiers: [], fnPressed: false))
-    }
-
-    @Test func wrongKeyCodeBreaksMatch() {
-        #expect(!Self.optionGrave.matches(keyCode: UInt16(kVK_ANSI_A), modifiers: .option, fnPressed: false))
-    }
-
-    @Test func fnModifierMatchSucceeds() {
-        #expect(Self.fnK.matches(keyCode: UInt16(kVK_ANSI_K), modifiers: [], fnPressed: true))
-    }
-
-    @Test func missingFnBreaksMatch() {
-        #expect(!Self.fnK.matches(keyCode: UInt16(kVK_ANSI_K), modifiers: [], fnPressed: false))
-    }
-}
+// Per-event chord comparison moved to the hot-key registration itself; which
+// backend a shortcut resolves to is covered by ShortcutBackendTests.
 
 struct CustomShortcutDisplayTests {
     @Test func optionGraveDisplayString() {

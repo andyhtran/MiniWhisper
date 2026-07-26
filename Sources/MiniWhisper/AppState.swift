@@ -252,4 +252,12 @@ final class AppState: Sendable {
         CustomShortcutMonitor.shared.reloadShortcuts()
     }
 
+    /// Which shortcuts are registered depends on which features are switched
+    /// on, so a settings change has to re-derive them. A shortcut for a
+    /// disabled feature must end up unregistered — that is what lets the chord
+    /// reach the focused app instead of being swallowed.
+    func refreshShortcutRegistrations() {
+        CustomShortcutMonitor.shared.refresh()
+    }
+
 }

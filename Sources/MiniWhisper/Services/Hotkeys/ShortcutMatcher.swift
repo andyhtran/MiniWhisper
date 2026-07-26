@@ -1,6 +1,8 @@
 import Foundation
-import AppKit
 
+/// Holds the persisted shortcut set and answers the one question the modifier
+/// tap still needs at event time. Key chords are matched by the hot-key
+/// registration itself, so no per-event comparison happens for them.
 final class ShortcutMatcher: @unchecked Sendable {
     struct MatchResult {
         let name: CustomShortcutName
@@ -26,47 +28,17 @@ final class ShortcutMatcher: @unchecked Sendable {
         return shortcuts
     }
 
-    func findMatch(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, fnPressed: Bool) -> MatchResult? {
-        lock.lock()
-        let current = shortcuts
-        lock.unlock()
-
-        for (name, shortcut) in current {
-            if shortcut.isFnOnly { continue }
-            if shortcut.matches(keyCode: keyCode, modifiers: modifiers, fnPressed: fnPressed) {
-                return MatchResult(name: name)
-            }
-        }
-        return nil
-    }
-
-    func findByKeyCode(_ keyCode: UInt16) -> MatchResult? {
-        lock.lock()
-        let current = shortcuts
-        lock.unlock()
-
-        for (name, shortcut) in current {
-            if shortcut.keyCode == keyCode {
-                return MatchResult(name: name)
-            }
-        }
-        return nil
-    }
-
+    /// Scanned in declaration order rather than dictionary order: if a user has
+    /// bound more than one shortcut to the bare modifier, the same one must win
+    /// every time, or which action fires would vary between presses.
     func findFnOnlyShortcut() -> MatchResult? {
         lock.lock()
         let current = shortcuts
         lock.unlock()
 
-        for (name, shortcut) in current {
-            if shortcut.isFnOnly {
-                return MatchResult(name: name)
-            }
+        for name in CustomShortcutName.allCases where current[name]?.isFnOnly == true {
+            return MatchResult(name: name)
         }
         return nil
-    }
-
-    func hasFnOnlyShortcut() -> Bool {
-        findFnOnlyShortcut() != nil
     }
 }
