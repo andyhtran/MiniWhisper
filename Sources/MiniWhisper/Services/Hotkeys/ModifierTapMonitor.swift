@@ -37,6 +37,10 @@ final class ModifierTapMonitor: @unchecked Sendable {
     /// Written from the tap thread, read by the watchdog; both under `lock`.
     private var lastEventTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
     private var starvedRebuilds = 0
+    /// True after one over-threshold latency read; the next tick either
+    /// confirms starvation or proves the sample was stale. Main-actor confined
+    /// like `starvedRebuilds` — only `checkTapHealth` touches either.
+    private var starvationSuspected = false
 
     private var watchdogTimer: Timer?
     private var retryTimer: Timer?
@@ -195,12 +199,14 @@ final class ModifierTapMonitor: @unchecked Sendable {
             // resolve. Without a retry here nothing would rebuild the tap short
             // of restarting the app.
             log.info("Modifier tap missing while it should be running; retrying creation")
+            starvationSuspected = false
             createTap()
             return
         }
 
         if !CGEvent.tapIsEnabled(tap: tap) {
             log.warning("Watchdog found modifier tap disabled; re-enabling")
+            starvationSuspected = false
             CGEvent.tapEnable(tap: tap, enable: true)
             if !CGEvent.tapIsEnabled(tap: tap) {
                 log.error("Re-enable did not stick; recreating modifier tap")
@@ -212,16 +218,28 @@ final class ModifierTapMonitor: @unchecked Sendable {
         // Reaching here means the tap claims to be enabled, which a starved tap
         // also does — hence the second, external opinion below.
         let latencyUs = reportedTapLatencyUs()
-        if TapStarvationPolicy.isStarved(silentFor: silent, reportedLatencyUs: latencyUs) {
+        let latencySeconds = Int((latencyUs ?? 0) / 1_000_000)
+        switch TapStarvationPolicy.verdict(
+            silentFor: silent,
+            reportedLatencyUs: latencyUs,
+            wasSuspect: starvationSuspected
+        ) {
+        case .healthy:
+            starvationSuspected = false
+            starvedRebuilds = 0
+        case .suspect:
+            starvationSuspected = true
+            log.warning(
+                "Tap latency reads \(latencySeconds)s after \(Int(silent))s of silence; re-checking next tick before rebuilding — the sample may be stale"
+            )
+        case .starved:
+            starvationSuspected = false
             starvedRebuilds += 1
-            let latencySeconds = Int((latencyUs ?? 0) / 1_000_000)
             log.error(
-                "Tap starved — enabled but WindowServer queue latency \(latencySeconds)s; recreating (rebuild #\(self.starvedRebuilds) since last healthy tick)"
+                "Tap starved — enabled but WindowServer queue latency \(latencySeconds)s on two consecutive checks; recreating (rebuild #\(self.starvedRebuilds) since last healthy tick)"
             )
             recreate()
-            return
         }
-        starvedRebuilds = 0
     }
 
     /// The window server's queue latency for this tap, matched by tapping pid
@@ -229,8 +247,14 @@ final class ModifierTapMonitor: @unchecked Sendable {
     /// and the Fn companion observer both use different masks), and only this
     /// one's health is being judged.
     ///
-    /// The value grows in lockstep with wall clock while an event sits
-    /// undelivered, which is what separates a starved tap from an idle one.
+    /// Two properties of this figure shape the policy above. While an event
+    /// sits undelivered it grows with wall clock, which is the signal that
+    /// separates a starved tap from an idle one. But after a long quiet
+    /// stretch it can also hold one enormous stale sample (observed on
+    /// macOS 26 while input was healthy), so a single reading is never acted
+    /// on. Reading the list resets the accumulator, which is what makes the
+    /// two-read confirmation work: a stale sample cannot survive its own
+    /// read, a genuine backlog is high again by the next tick.
     private func reportedTapLatencyUs() -> Float? {
         var count: UInt32 = 0
         guard CGGetEventTapList(0, nil, &count) == .success, count > 0 else { return nil }
