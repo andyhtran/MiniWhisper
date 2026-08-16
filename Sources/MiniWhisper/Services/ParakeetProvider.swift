@@ -30,7 +30,7 @@ final class ParakeetProvider {
                 }
             )
             let manager = AsrManager(config: .default)
-            try await manager.initialize(models: models)
+            try await manager.loadModels(models)
             asrManager = manager
         }
         initializationTask = task
@@ -54,7 +54,9 @@ final class ParakeetProvider {
 
         let startTime = Date()
 
-        let result = try await manager.transcribe(audioURL, source: .microphone)
+        // Reusing state leaks token context from the previous recording.
+        var decoderState = try TdtDecoderState()
+        let result = try await manager.transcribe(audioURL, decoderState: &decoderState)
         let processingTime = Date().timeIntervalSince(startTime)
 
         let segments = convertToSegments(result)
@@ -68,7 +70,7 @@ final class ParakeetProvider {
         )
     }
 
-    nonisolated private static func mapProgress(_ progress: DownloadUtils.DownloadProgress) -> ModelLoadProgress {
+    nonisolated private static func mapProgress(_ progress: DownloadProgress) -> ModelLoadProgress {
         switch progress.phase {
         case .listing:
             return ModelLoadProgress(phase: .checking, progress: nil)

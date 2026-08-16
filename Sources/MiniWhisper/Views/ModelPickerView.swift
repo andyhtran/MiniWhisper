@@ -105,11 +105,11 @@ struct ModelPickerView: View {
             ModelRow(
                 icon: "bolt.horizontal.fill",
                 title: "Codex CLI",
-                subtitle: "OpenAI · \(EditModeModel.gpt5Mini.rawValue)",
+                subtitle: "OpenAI · \(EditModeModel.gpt56Luna.rawValue)",
                 badge: nil,
-                isSelected: editModel == .gpt5Mini
+                isSelected: editModel == .gpt56Luna
             ) {
-                selectEditModel(.gpt5Mini)
+                selectEditModel(.gpt56Luna)
             }
 
             ModelRow(

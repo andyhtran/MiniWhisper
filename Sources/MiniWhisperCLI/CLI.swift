@@ -23,6 +23,8 @@ enum CLI {
             return 0
         case "transcribe":
             return await TranscribeCommand.run(arguments: rest)
+        case "diarize":
+            return await DiarizeCommand.run(arguments: rest)
         case "models":
             return await ModelsCommand.run(arguments: rest)
         case "paths":
@@ -96,6 +98,7 @@ enum Help {
 
             Common commands:
               transcribe <audio>       Transcribe audio with Parakeet or Whisper
+              diarize <audio>          Label who spoke when, as RTTM
               models status            Show local model readiness
               models install parakeet  Install the default Parakeet model
               models install whisper   Install the optional Whisper model
@@ -147,6 +150,7 @@ enum Help {
 
             Commands:
               transcribe <audio>                      Transcribe audio with Parakeet or Whisper
+              diarize <audio>                         Label who spoke when, as RTTM
               models                                  Show local model readiness
               models status [--json]                  Show local model readiness
               models install <parakeet|whisper>       Install or verify a model
@@ -195,6 +199,35 @@ enum Help {
               miniwhispercli skills get timestamps
 
             Claude skills: \(MiniWhisperPaths.claudeSkills.path)
+            """
+        )
+    }
+
+    static func printDiarize() {
+        Console.out(
+            """
+            MiniWhisper CLI
+
+            Usage:
+              miniwhispercli diarize <audio> [options]
+
+            Labels who spoke when and writes RTTM. Does not transcribe; join the
+            output against a transcript on timestamps.
+
+            Options:
+              -o, --output <path>       Write RTTM to a file instead of stdout
+              --speakers <n>            Expected speaker count (default: automatic)
+              --threshold <n>           Clustering threshold, 0.5-0.9. Lower finds more
+                                        speakers (default: 0.6). Ignored when
+                                        --speakers is set
+              --channel <mix|0|1>       Which channel to read. Two-source recordings put
+                                        one speaker per channel (default: mix)
+              -q, --quiet               Suppress progress on stderr
+              -h, --help                Show this help
+
+            Examples:
+              miniwhispercli diarize recording.wav
+              miniwhispercli diarize recording.wav --speakers 3 -o recording.rttm
             """
         )
     }
