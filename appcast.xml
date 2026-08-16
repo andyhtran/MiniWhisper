@@ -3,6 +3,16 @@
     <channel>
         <title>MiniWhisper</title>
         <item>
+            <title>1.11.0</title>
+            <pubDate>Sun, 16 Aug 2026 13:14:17 -0400</pubDate>
+            <link>https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml</link>
+            <sparkle:version>39</sparkle:version>
+            <sparkle:shortVersionString>1.11.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/andyhtran/MiniWhisper/releases/download/v1.11.0/MiniWhisper-1.11.0.zip" length="9017087" type="application/octet-stream" sparkle:edSignature="v1nc30xiPx6VvdCGCAEGYmdl3NjGLXTlrVrNatyuHTtCfWwyIWO8hJc33MtLt4EIukEunGAm62NBwMMmTfEWDA=="/>
+        </item>
+        <item>
             <title>1.10.1</title>
             <pubDate>Sat, 08 Aug 2026 12:54:31 -0400</pubDate>
             <link>https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml</link>
@@ -45,16 +55,6 @@
 </ul>
 ]]></description>
             <enclosure url="https://github.com/andyhtran/MiniWhisper/releases/download/v1.10.0/MiniWhisper-1.10.0.zip" length="12884740" type="application/octet-stream" sparkle:edSignature="mamBk5X6aKT1vbnxrrUivXGi10JecTsux/rm8A3GAbElGZhlzE1v3a7vM/danY3iE4QFizfeNyY1FNVOS4AwCw=="/>
-        </item>
-        <item>
-            <title>1.9.1</title>
-            <pubDate>Tue, 14 Jul 2026 23:36:33 -0400</pubDate>
-            <link>https://raw.githubusercontent.com/andyhtran/MiniWhisper/main/appcast.xml</link>
-            <sparkle:version>36</sparkle:version>
-            <sparkle:shortVersionString>1.9.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/andyhtran/MiniWhisper/releases/download/v1.9.1/MiniWhisper-1.9.1.zip" length="12847961" type="application/octet-stream" sparkle:edSignature="xPa8YrqDfU+7FxGLRbDeTkgrcN6HhiUZYEKR4kzXFNu5QoCnu/MXdTHc28YVsKppEAQThC+TDAhMoMZWihfTDg=="/>
         </item>
     </channel>
 </rss>
