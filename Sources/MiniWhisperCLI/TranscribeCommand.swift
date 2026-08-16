@@ -24,6 +24,7 @@ struct TranscribeOptions {
     var model: TranscribeModelChoice = .parakeet
     var source: SourceChoice = .microphone
     var sourceSpecified = false
+    var channel: AudioChannelSelection = .mix
     var whisperLanguage: WhisperLanguageChoice = .auto
     var whisperLanguageSpecified = false
     var whisperAlignmentMode: WhisperAlignmentMode = .none
@@ -142,6 +143,13 @@ enum TranscribeCommand {
                 }
                 options.source = source
                 options.sourceSpecified = true
+            case "--channel":
+                let value = try value(after: argument, in: arguments, at: &index)
+                guard let channel = AudioChannelSelection.parse(value) else {
+                    throw CLIError.usage(
+                        "Invalid channel: \(value). Expected mix or a channel index like 0 or 1.")
+                }
+                options.channel = channel
             case "--language":
                 let value = try value(after: argument, in: arguments, at: &index)
                 options.whisperLanguage = try WhisperLanguageChoice.parse(value)
@@ -343,23 +351,25 @@ enum TranscribeCommand {
         }
 
         let models = try await AsrModels.downloadAndLoad(version: ParakeetModel.version)
-        let manager = AsrManager(config: .default)
+        // Streaming is now a config flag, not a separate method.
+        let manager = AsrManager(config: ASRConfig(streamingEnabled: options.forceStreaming))
 
         do {
-            try await manager.initialize(models: models)
+            try await manager.loadModels(models)
 
             if !options.quiet {
                 let mode = options.forceStreaming ? "streaming" : "batch"
-                Console.error("Transcribing \(audioURL.path) (\(mode), model: parakeet, source: \(options.source.rawValue))...")
+                Console.error("Transcribing \(audioURL.path) (\(mode), model: parakeet, channel: \(options.channel.label))...")
             }
 
             let wallClockStart = Date()
-            let result: ASRResult
-            if options.forceStreaming {
-                result = try await manager.transcribeStreaming(audioURL, source: options.source.fluidAudioSource)
-            } else {
-                result = try await manager.transcribe(audioURL, source: options.source.fluidAudioSource)
-            }
+            // Reusing state leaks token context between files.
+            var decoderState = try TdtDecoderState()
+            // Samples, not the URL: the URL overload reads the file itself and would
+            // bypass channel selection.
+            let samples = try WhisperCLITranscriber.resampleTo16kHz(
+                audioURL: audioURL, channel: options.channel)
+            let result = try await manager.transcribe(samples, decoderState: &decoderState)
             let wallClockProcessingTime = Date().timeIntervalSince(wallClockStart)
             await manager.cleanup()
 
@@ -409,7 +419,8 @@ enum TranscribeCommand {
             audioURL: audioURL,
             language: options.whisperLanguage,
             alignmentMode: effectiveWhisperAlignmentMode(for: options),
-            quiet: options.quiet
+            quiet: options.quiet,
+            channel: options.channel
         )
         let jsonWordTimings = options.timestampMode == .word ? result.wordTimings : []
         let subtitleSegments = jsonWordTimings.isEmpty

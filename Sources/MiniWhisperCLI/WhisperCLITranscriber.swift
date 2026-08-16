@@ -307,7 +307,8 @@ enum WhisperCLITranscriber {
         audioURL: URL,
         language: WhisperLanguageChoice,
         alignmentMode: WhisperAlignmentMode,
-        quiet: Bool
+        quiet: Bool,
+        channel: AudioChannelSelection = .mix
     ) async throws -> WhisperCLIResult {
         try await ensureModels(quiet: quiet)
 
@@ -329,7 +330,7 @@ enum WhisperCLITranscriber {
             Console.error("Transcribing \(audioURL.path) (batch, model: whisper, language: \(language.displayValue), align: \(alignment))...")
         }
 
-        let samples = try resampleTo16kHz(audioURL: audioURL)
+        let samples = try resampleTo16kHz(audioURL: audioURL, channel: channel)
         let audioDuration = AudioMetadata.durationSeconds(for: audioURL) ?? 0
         let start = Date()
         // VAD compacts audio before decode, and whisper.cpp token timestamps stay on that compacted timeline.
@@ -396,7 +397,12 @@ enum WhisperCLITranscriber {
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
     }
 
-    private static func resampleTo16kHz(audioURL: URL) throws -> [Float] {
+    /// AVAudioConverter silently drops non-zero channels instead of downmixing,
+    /// so channels are folded to mono here before resampling.
+    static func resampleTo16kHz(
+        audioURL: URL,
+        channel: AudioChannelSelection = .mix
+    ) throws -> [Float] {
         let audioFile = try AVAudioFile(
             forReading: audioURL,
             commonFormat: .pcmFormatFloat32,
@@ -404,37 +410,86 @@ enum WhisperCLITranscriber {
         )
         let inputFormat = audioFile.processingFormat
 
-        guard let outputFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 16_000,
-            channels: 1,
-            interleaved: false
-        ) else {
-            throw WhisperCLIError.resampleFailed
-        }
-
         let frameCount = AVAudioFrameCount(audioFile.length)
-        guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frameCount) else {
+        guard frameCount > 0,
+              let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frameCount) else {
             throw WhisperCLIError.resampleFailed
         }
         try audioFile.read(into: inputBuffer)
 
-        if inputFormat.sampleRate == 16_000 && inputFormat.channelCount == 1 {
-            let pointer = inputBuffer.floatChannelData![0]
-            return Array(UnsafeBufferPointer(start: pointer, count: Int(inputBuffer.frameLength)))
-        }
+        let mono = try foldToMono(inputBuffer, channel: channel)
 
-        guard let resampler = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+        if inputFormat.sampleRate == 16_000 {
+            return mono
+        }
+        return try resampleMono(mono, from: inputFormat.sampleRate)
+    }
+
+    /// Collapse a multi-channel buffer to a single float array at the source rate.
+    private static func foldToMono(
+        _ buffer: AVAudioPCMBuffer,
+        channel: AudioChannelSelection
+    ) throws -> [Float] {
+        guard let data = buffer.floatChannelData else {
+            throw WhisperCLIError.resampleFailed
+        }
+        let frames = Int(buffer.frameLength)
+        let channels = Int(buffer.format.channelCount)
+
+        switch channel {
+        case .index(let requested):
+            guard requested < channels else {
+                throw WhisperCLIError.channelOutOfRange(requested: requested, available: channels)
+            }
+            return Array(UnsafeBufferPointer(start: data[requested], count: frames))
+
+        case .mix:
+            if channels == 1 {
+                return Array(UnsafeBufferPointer(start: data[0], count: frames))
+            }
+            // Average, not sum: summing two correlated channels clips.
+            var mixed = [Float](repeating: 0, count: frames)
+            let scale = 1 / Float(channels)
+            for channelIndex in 0..<channels {
+                let samples = data[channelIndex]
+                for frame in 0..<frames {
+                    mixed[frame] += samples[frame] * scale
+                }
+            }
+            return mixed
+        }
+    }
+
+    private static func resampleMono(_ samples: [Float], from sourceRate: Double) throws -> [Float] {
+        guard let sourceFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: sourceRate, channels: 1, interleaved: false
+        ), let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
+        ) else {
             throw WhisperCLIError.resampleFailed
         }
 
-        let ratio = outputFormat.sampleRate / inputFormat.sampleRate
-        let outputFrameCount = AVAudioFrameCount((Double(inputBuffer.frameLength) * ratio).rounded(.up)) + 1024
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrameCount) else {
+        guard let sourceBuffer = AVAudioPCMBuffer(
+            pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(samples.count)
+        ) else {
+            throw WhisperCLIError.resampleFailed
+        }
+        sourceBuffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { source in
+            sourceBuffer.floatChannelData![0].update(from: source.baseAddress!, count: samples.count)
+        }
+
+        guard let resampler = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
             throw WhisperCLIError.resampleFailed
         }
 
-        let inputState = CLIWhisperInputState(buffer: inputBuffer)
+        let ratio = 16_000 / sourceRate
+        let capacity = AVAudioFrameCount((Double(samples.count) * ratio).rounded(.up)) + 1024
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
+            throw WhisperCLIError.resampleFailed
+        }
+
+        let inputState = CLIWhisperInputState(buffer: sourceBuffer)
         var error: NSError?
         resampler.convert(to: outputBuffer, error: &error) { _, outStatus in
             if inputState.consumed {
@@ -466,6 +521,7 @@ enum WhisperCLIError: LocalizedError {
     case transcriptionFailed
     case downloadFailed
     case resampleFailed
+    case channelOutOfRange(requested: Int, available: Int)
 
     var errorDescription: String? {
         switch self {
@@ -473,6 +529,28 @@ enum WhisperCLIError: LocalizedError {
         case .transcriptionFailed: return "Whisper transcription failed."
         case .downloadFailed: return "Failed to download Whisper model."
         case .resampleFailed: return "Failed to resample audio for Whisper."
+        case .channelOutOfRange(let requested, let available):
+            let plural = available == 1 ? "channel" : "channels"
+            return "Channel \(requested) requested but the file has \(available) \(plural) (0-\(available - 1))."
+        }
+    }
+}
+
+/// Which channels of a multi-channel file feed transcription.
+enum AudioChannelSelection: Equatable {
+    case mix
+    case index(Int)
+
+    static func parse(_ value: String) -> AudioChannelSelection? {
+        if value == "mix" { return .mix }
+        guard let index = Int(value), index >= 0 else { return nil }
+        return .index(index)
+    }
+
+    var label: String {
+        switch self {
+        case .mix: return "mix"
+        case .index(let index): return String(index)
         }
     }
 }

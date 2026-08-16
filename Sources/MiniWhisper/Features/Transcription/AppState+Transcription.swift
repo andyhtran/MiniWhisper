@@ -50,7 +50,7 @@ extension AppState {
                 }
                 cleaned = try await customEditProvider.cleanupTranscript(
                     rawText, settings: customEditProviderSettings)
-            case .gpt5Mini, .claudeHaiku45:
+            case .gpt56Luna, .claudeHaiku45:
                 cleaned = try await editModeProvider.cleanupTranscript(
                     rawText, model: model)
             }

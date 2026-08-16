@@ -6,7 +6,7 @@ import Foundation
 /// `~/.codex/auth.json`); `.custom` routes through `CustomEditProvider`
 /// to a user-supplied OpenAI-compatible chat-completions endpoint.
 enum EditModeModel: String, Codable, CaseIterable, Sendable {
-    case gpt5Mini = "gpt-5.4-mini"
+    case gpt56Luna = "gpt-5.6-luna"
     case claudeHaiku45 = "claude-haiku-4-5"
     case custom = "custom"
 
@@ -15,7 +15,7 @@ enum EditModeModel: String, Codable, CaseIterable, Sendable {
     var backend: EditModeBackend {
         switch self {
         case .claudeHaiku45: return .claudeCli
-        case .gpt5Mini: return .codexCli
+        case .gpt56Luna: return .codexCli
         case .custom: return .customApi
         }
     }
@@ -25,7 +25,7 @@ enum EditModeModel: String, Codable, CaseIterable, Sendable {
     var oauthProvider: String {
         switch self {
         case .claudeHaiku45: return "anthropic"
-        case .gpt5Mini: return "openai-codex"
+        case .gpt56Luna: return "openai-codex"
         case .custom: return ""
         }
     }
@@ -38,7 +38,7 @@ enum EditModeModel: String, Codable, CaseIterable, Sendable {
     var reasoningEffort: String? {
         switch self {
         case .claudeHaiku45: return nil
-        case .gpt5Mini: return "none"
+        case .gpt56Luna: return "none"
         case .custom: return nil
         }
     }

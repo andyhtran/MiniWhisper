@@ -227,7 +227,7 @@ extension AppState {
                     instruction: transcription.text,
                     selection: context.selectedText,
                     settings: customEditProviderSettings)
-            case .gpt5Mini, .claudeHaiku45:
+            case .gpt56Luna, .claudeHaiku45:
                 edited = try await editModeProvider.editText(
                     instruction: transcription.text,
                     selection: context.selectedText,

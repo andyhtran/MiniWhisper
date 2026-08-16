@@ -14,6 +14,10 @@ enum RuntimeSkills {
         RuntimeSkillInfo(
             name: "timestamps",
             description: "Timed transcripts, subtitles, captions, overlays, and edit-boundary timing"
+        ),
+        RuntimeSkillInfo(
+            name: "speakers",
+            description: "Speaker attribution: who spoke when, RTTM output, and per-channel splitting"
         )
     ]
 
@@ -25,6 +29,7 @@ enum RuntimeSkills {
         switch name {
         case "core": return CoreSkill.text
         case "timestamps": return TimestampsSkill.text
+        case "speakers": return SpeakersSkill.text
         default: return nil
         }
     }
@@ -47,6 +52,7 @@ enum CoreSkill {
         Start here:
           miniwhispercli skills get core
           miniwhispercli skills get timestamps  # for subtitles, captions, overlays, or edit timing
+          miniwhispercli skills get speakers    # for who spoke when, or speaker-labelled transcripts
           miniwhispercli skills list --json
 
         Version-matched guidance lives in the installed binary.

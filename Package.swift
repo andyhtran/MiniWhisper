@@ -14,7 +14,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/FluidInference/FluidAudio.git",
-            .upToNextMinor(from: "0.12.6")
+            .upToNextMinor(from: "0.15.5")
         ),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.1"),
     ],
