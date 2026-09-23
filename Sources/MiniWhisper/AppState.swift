@@ -18,6 +18,7 @@ final class AppState: Sendable {
     let permissions = PermissionsManager()
     let pasteboard = PasteboardService()
     let toast = ToastWindowController.shared
+    let soundEffects = SoundEffects()
 
     @ObservationIgnored private lazy var modelLoader = ModelLoadCoordinator(
         initialMode: transcriptionMode,
@@ -89,6 +90,7 @@ final class AppState: Sendable {
             let recordingId = currentRecordingId
             stopDurationChecks()
             onRecordingEnded?()
+            soundEffects.playStop()
             currentRecordingId = nil
             captureTransitionInFlight = false
             cleanupRequestedForCurrentRecording = false

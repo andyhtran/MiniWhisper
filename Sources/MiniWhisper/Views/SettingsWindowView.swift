@@ -185,6 +185,7 @@ private struct GeneralSettingsPage: View {
     @State private var autoUpdateEnabled = true
     @State private var vadEnabled = VADSettings.enabled
     @State private var editModeBehavior = EditModeSettings.behavior
+    @State private var soundEffectsEnabled = SoundEffectsSettings.enabled
 
     var body: some View {
         @Bindable var appState = appState
@@ -212,6 +213,21 @@ private struct GeneralSettingsPage: View {
 
                 LabeledContent("Check for updates") {
                     updateCheckContent
+                }
+
+                Toggle(
+                    isOn: Binding(
+                        get: { soundEffectsEnabled },
+                        set: {
+                            soundEffectsEnabled = $0
+                            SoundEffectsSettings.enabled = $0
+                        }
+                    )
+                ) {
+                    InfoLabel(
+                        title: "Play sound on recording start/stop",
+                        text: "A brief audio cue so you can tell MiniWhisper is listening without checking the menu bar."
+                    )
                 }
             }
 
