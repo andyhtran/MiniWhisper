@@ -55,6 +55,7 @@ extension AppState {
             try await recorder.startRecording(to: audioURL, resolvedDevice: resolvedDevice)
             startDurationChecks()
             onRecordingStarted?()
+            soundEffects.playStart()
         } catch {
             recordingStore.discard(id: recordingId)
             toast.showError(title: "Recording Failed", message: error.localizedDescription)
@@ -72,6 +73,7 @@ extension AppState {
 
         stopDurationChecks()
         onRecordingEnded?()
+        soundEffects.playStop()
 
         let duration = recorder.currentDuration
         let sampleRate = recorder.actualSampleRate
@@ -185,6 +187,7 @@ extension AppState {
         cleanupRequestedForCurrentRecording = false
         stopDurationChecks()
         onRecordingEnded?()
+        soundEffects.playStop()
 
         let duration = recorder.currentDuration
         let sampleRate = recorder.actualSampleRate
