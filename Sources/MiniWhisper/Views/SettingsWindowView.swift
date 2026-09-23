@@ -365,12 +365,28 @@ private struct GeneralSettingsPage: View {
 
 private struct ShortcutSettingsPage: View {
     @Environment(AppState.self) private var appState
+    @State private var pushToTalkEnabled = PushToTalkSettings.enabled
 
     var body: some View {
         Form {
             Section("Keyboard Shortcuts") {
                 ForEach(CustomShortcutName.allCases, id: \.self) { name in
                     SettingsShortcutRow(name: name)
+                }
+
+                Toggle(
+                    isOn: Binding(
+                        get: { pushToTalkEnabled },
+                        set: {
+                            pushToTalkEnabled = $0
+                            PushToTalkSettings.enabled = $0
+                        }
+                    )
+                ) {
+                    InfoLabel(
+                        title: "Push to talk",
+                        text: "Hold Toggle Recording to record, release to stop and transcribe, instead of pressing it once to start and again to stop."
+                    )
                 }
             }
 
