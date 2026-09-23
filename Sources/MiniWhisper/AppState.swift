@@ -191,6 +191,29 @@ final class AppState: Sendable {
         Task { await startRecordingFlow() }
     }
 
+    /// Push-to-talk keyDown: starts a recording, unless one is already in
+    /// flight (a stray repeat, or the auto-cleanup shortcut got there
+    /// first). Edit-mode recording owns the recorder while active, same as
+    /// `toggleRecording`.
+    func startPushToTalkRecording() {
+        if editModeContext != nil { return }
+        if recorder.state.isRecording { return }
+
+        cleanupRequestedForCurrentRecording = false
+        startRecording()
+    }
+
+    /// Push-to-talk keyUp: stops and transcribes, but only if this hold
+    /// actually started a recording — releasing a key that never started
+    /// one (edit mode active, or the start was skipped above) must not stop
+    /// an unrelated in-flight recording.
+    func stopPushToTalkRecording() {
+        if editModeContext != nil { return }
+        guard recorder.state.isRecording else { return }
+
+        stopAndTranscribe()
+    }
+
     func stopAndTranscribe() {
         Task { await stopAndTranscribeFlow() }
     }

@@ -5,6 +5,8 @@ import AppKit
 @MainActor
 protocol HotkeyManagerDelegate: AnyObject {
     nonisolated func hotkeyDidToggleRecording()
+    nonisolated func hotkeyDidStartRecording()
+    nonisolated func hotkeyDidStopRecording()
     nonisolated func hotkeyDidCancelRecording()
     nonisolated func hotkeyDidToggleAutoCleanupRecording()
     nonisolated func hotkeyDidEditSelection()
@@ -55,9 +57,23 @@ final class HotkeyManager {
         shortcutMonitor.refresh()
     }
 
+    // In toggle mode (default), only keyDown does anything: press to start,
+    // press again to stop. In push-to-talk mode, keyDown starts and keyUp
+    // stops, so the shortcut is held for the duration of the recording.
+    // The pref is read live on each edge rather than baked in at setup, so
+    // flipping it in Settings takes effect on the very next press without a
+    // re-registration.
     private func setupToggleRecording() {
         shortcutMonitor.onKeyDown(for: .toggleRecording) { [weak self] in
-            self?.delegate?.hotkeyDidToggleRecording()
+            if PushToTalkSettings.enabled {
+                self?.delegate?.hotkeyDidStartRecording()
+            } else {
+                self?.delegate?.hotkeyDidToggleRecording()
+            }
+        }
+        shortcutMonitor.onKeyUp(for: .toggleRecording) { [weak self] in
+            guard PushToTalkSettings.enabled else { return }
+            self?.delegate?.hotkeyDidStopRecording()
         }
     }
 
